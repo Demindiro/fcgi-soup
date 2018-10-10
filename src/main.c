@@ -87,6 +87,7 @@ static int check_template(char *file, time_t *time, template *temp, const char *
 	return 0;
 }
 
+
 static int check_templates()
 {
 	if (check_template("error.phtml"    ,     &error_mod_time,     &error_temp, "<h1>{STATUS}: {MESSAGE}</h1>"      ) < 0 || 
@@ -112,6 +113,28 @@ int main()
 	char buf[0x10000];
 	int pagesize = getpagesize();
 	while (FCGI_Accept() >= 0) {
+	
+		char *map_or_read_file(int fd, size_t size)
+		{
+			char *buf;
+			if (size % pagesize > 0) {
+				buf = mmap(NULL, size, PROT_READ | PROT_WRITE , MAP_PRIVATE, fd, 0);
+			} else {
+				buf = malloc(size + 1);
+				read(fd, buf, size);
+			}
+			buf[size] = 0;
+			close(fd);
+			return buf;
+		}
+		void unmap_or_free_file(char *ptr, size_t size)
+		{
+			if (size % pagesize > 0)
+				munmap(ptr, size);
+			else
+				free(ptr);
+		}
+
 		check_templates();
 		// Do not remove this header
 		printf("X-My-Own-Header: All hail the mighty Duck God\r\n");
@@ -151,39 +174,35 @@ int main()
 			printf("Content-Type: %s\r\n", mime);
 		printf("Status: 200\r\n"
 		       "\r\n");
-		char *body = mmap(NULL, statbuf.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+		char *body = map_or_read_file(fd, statbuf.st_size);
 		if (body == NULL) {
 			perror("Error during mapping");
 			continue;
 		}
-		if (statbuf.st_size % pagesize == 0) {
-			char *p = mmap(body + statbuf.st_size + 1, pagesize, PROT_WRITE | PROT_READ, MAP_FIXED | MAP_PRIVATE, -1, 0);
-			p[0] = 0;
-		}
 		if (mime != NULL && strcmp(mime, "text/html") == 0) {
 			if (dict_set(&container_dict, "BODY", body)) {
 				perror("Error during setting BODY");
-				continue;
+				goto next;
 			}
 			munmap(body, statbuf.st_size);
 			close(fd);
 			body = template_parse(&container_temp, &container_dict);
 			if (body == NULL) {
 				perror("Error during parsing");
-				continue;
+				goto next;
 			}
 			if (printf("%*s", statbuf.st_size, body) < 0) {
 				perror("Error during writing");
-				continue;
+				goto next;
 			}
 		} else {			
 			if (printf("%*s", statbuf.st_size, body) < 0) {
 				perror("Error during writing");
-				continue;
+				goto next;
 			}
-			munmap(body, statbuf.st_size + ((statbuf.st_size % pagesize == 0) ? 4096 : 0));
-			close(fd);
 		}
+	next:
+		unmap_or_free_file(body, statbuf.st_size);
 		fflush(stdout);
 	}
 	return 0;
