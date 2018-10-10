@@ -91,6 +91,8 @@ void template_free(template *temp)
 
 char *template_parse(const template *temp, const dictionary *dict)
 {
+	if (temp->parts == NULL)
+		return NULL;
 	size_t bufl = 0x100;
 	size_t strl = temp->lengths[0];
 	if (strl > bufl)

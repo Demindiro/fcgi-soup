@@ -65,22 +65,28 @@ static int check_template(char *file, time_t *time, template *temp, const char *
 			template_free(temp);
 			int fd = open(file, O_RDONLY);
 			if (fd < 0) {
-				perror("Couldn't open 'error.phtml'");
+				perror("Couldn't open file");
 				return -1;
 			}
 			char buf[statbuf.st_size + 1];
-			if (read(fd, buf, statbuf.st_size) < 0)
+			if (read(fd, buf, statbuf.st_size) < 0) {
+				perror("Couldn't read file");
 				return -1;
+			}
 			buf[statbuf.st_size] = 0;
-			if (template_create(temp, buf) < 0)
+			if (template_create(temp, buf) < 0) {
+				perror("Couldn't create template of file");
 				return -1;
+			}
 			*time = statbuf.st_mtime;
 		}
 	} else {
 		if (*time != 0) {
 			template_free(temp);
-			if (template_create(temp, def_temp) < 0)
+			if (template_create(temp, def_temp) < 0) {
+				perror("Couldn't create base template");
 				return -1;
+			}
 			*time = 0;
 		}
 	}
@@ -100,8 +106,10 @@ static int check_templates()
 static int setup()
 {
 	if (dict_create(&error_dict    ) < 0 ||
-	    dict_create(&container_dict) < 0)
+	    dict_create(&container_dict) < 0) {
+		perror("Couldn't create dictionaries");
 		return -1;
+	}
 	return check_templates();
 }
 
