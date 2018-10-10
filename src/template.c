@@ -33,6 +33,7 @@ int template_create(template *temp, const char *text)
 					return -1;
 				size = s;
 			}
+			return 0;
 		}
 		int copy_part() {
 			if (check_bufs() < 0)
@@ -93,7 +94,7 @@ char *template_parse(const template *temp, const dictionary *dict)
 {
 	if (temp->parts == NULL)
 		return NULL;
-	size_t bufl = 0x100;
+	size_t bufl = 0x10000;
 	size_t strl = temp->lengths[0];
 	if (strl > bufl)
 		bufl = strl;
@@ -104,15 +105,11 @@ char *template_parse(const template *temp, const dictionary *dict)
 	for (size_t i = 0; i < temp->count; i++) {
 		const char *str = dict_get(dict, temp->keys[i]);
 		size_t strl;
-		if (str == NULL) {
+		if (str == NULL)
 			str = "NULL";
-			strl = sizeof("NULL") - 1;
-			break;
-		} else {
-			strl = strlen(str);
-		}
+		strl = strlen(str);
 		if (bufl < (ptr - buf) + strl) {
-			size_t nbufl = bufl * 3 / 2;
+			size_t nbufl = bufl + (ptr - buf) + strl;
 			char *tmp = realloc(buf, nbufl);
 			if (tmp == NULL) {
 				free(buf);

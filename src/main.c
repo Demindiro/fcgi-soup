@@ -47,7 +47,7 @@ static int print_error() {
 	if (body == NULL)
 		return -1;
 	printf("Content-Type: text/html\r\n"
-	       "Status: %d\r\n"
+	       "Status: %s\r\n"
 	       "\r\n"
 	       "%s",
 	       status, body);
@@ -120,8 +120,7 @@ int main()
 		return 1;
 	char buf[0x10000];
 	int pagesize = getpagesize();
-	while (FCGI_Accept() >= 0) {
-	
+	while (FCGI_Accept() >= 0) {	
 		char *map_or_read_file(int fd, size_t size)
 		{
 			char *buf;
@@ -190,28 +189,29 @@ int main()
 		if (mime != NULL && strcmp(mime, "text/html") == 0) {
 			if (dict_set(&container_dict, "BODY", body)) {
 				perror("Error during setting BODY");
-				goto next;
+				unmap_or_free_file(body, statbuf.st_size);
+				continue;
 			}
-			munmap(body, statbuf.st_size);
-			close(fd);
+			unmap_or_free_file(body, statbuf.st_size);
 			body = template_parse(&container_temp, &container_dict);
 			if (body == NULL) {
 				perror("Error during parsing");
-				goto next;
+				continue;
 			}
 			if (printf("%*s", statbuf.st_size, body) < 0) {
 				perror("Error during writing");
-				goto next;
+				free(body);
+				continue;
 			}
+			free(body);
+			fflush(stdout);
 		} else {			
 			if (printf("%*s", statbuf.st_size, body) < 0) {
 				perror("Error during writing");
-				goto next;
+				continue;
 			}
+			unmap_or_free_file(body, statbuf.st_size);
 		}
-	next:
-		unmap_or_free_file(body, statbuf.st_size);
-		fflush(stdout);
 	}
 	return 0;
 }
