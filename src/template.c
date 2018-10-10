@@ -94,36 +94,35 @@ char *template_parse(const template *temp, const dictionary *dict)
 {
 	if (temp->parts == NULL)
 		return NULL;
-	size_t bufl = 0x10000;
+	size_t bufl = 0x100;
 	size_t strl = temp->lengths[0];
-	if (strl > bufl)
-		bufl = strl;
+	if (strl >= bufl)
+		bufl = strl + 1;
 	char  *buf  = malloc(bufl);
 	memcpy(buf, temp->parts[0], strl);
-	char *ptr = buf + strl;
+	size_t offset = strl;
 
 	for (size_t i = 0; i < temp->count; i++) {
 		const char *str = dict_get(dict, temp->keys[i]);
-		size_t strl;
 		if (str == NULL)
 			str = "NULL";
 		strl = strlen(str);
-		if (bufl < (ptr - buf) + strl) {
-			size_t nbufl = bufl + (ptr - buf) + strl;
+		if (bufl < offset + strl) {
+			size_t nbufl = (offset + strl + temp->lengths[i+1] + 1) * 3 / 2;
 			char *tmp = realloc(buf, nbufl);
 			if (tmp == NULL) {
 				free(buf);
 				return NULL;
 			}
 			buf  = tmp;
-			ptr += tmp - buf;
 			bufl = nbufl;
 		}
-		memcpy(ptr, str, strl);
-		ptr += strl;
-		memcpy(ptr, temp->parts[i+1], temp->lengths[i+1]);
-		ptr += temp->lengths[i+1];
+		memcpy(&buf[offset], str, strl);
+		offset += strl;
+		memcpy(&buf[offset], temp->parts[i+1], temp->lengths[i+1]);
+		offset += temp->lengths[i+1];
 	}
-
+	buf = realloc(buf, offset + 1);
+	buf[offset] = 0;
 	return buf;
 }

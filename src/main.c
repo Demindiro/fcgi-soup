@@ -47,10 +47,11 @@ static int print_error() {
 	if (body == NULL)
 		return -1;
 	printf("Content-Type: text/html\r\n"
+	       "Content-Length: %d\r\n"
 	       "Status: %s\r\n"
 	       "\r\n"
 	       "%s",
-	       status, body);
+	       strlen(body), status, body);
 	free(body);
 	fflush(stdout);
 	return 0;
