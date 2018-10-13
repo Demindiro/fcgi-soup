@@ -14,6 +14,8 @@ typedef struct database {
 } database;
 
 
+int database_create(database *db, const char *file, uint8_t field_count, uint16_t *field_lengths);
+
 int database_load(database *db, const char *file);
 
 void database_free(database *db);
@@ -25,6 +27,10 @@ int database_set(database *db, uint8_t keyfield, const char *key, uint8_t valfie
 int database_add(database *db, const char *entry);
 
 int database_del(database *db, uint8_t keyfield, const char *key);
+
+int database_get_field(database *db, char *buf, const char *entry, uint8_t field);
+
+int database_get_range(database *db, const char ***entries, uint8_t field, const void *key1, const void *key2);
 
 
 #endif

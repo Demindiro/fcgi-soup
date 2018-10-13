@@ -1,21 +1,14 @@
 #ifndef ARTICLE_H
 #define ARTICLE_H
 
+
 #include <sys/stat.h>
-
-
-typedef struct article {
-	char *name;
-	time_t date;
-	char *contents;
-} article;
+#include "database.h"
 
 
 typedef struct article_root {
-	char *root;
-	int count;
-	int size;
-	article *articles;
+	struct database db;
+	char *dir;
 } article_root;
 
 
