@@ -25,7 +25,7 @@ int dict_create(dictionary *dict) {
 	return 0;
 }
 
-int dict_free(dictionary *dict)
+void dict_free(dictionary *dict)
 {
 	for (size_t i = 0; i < dict->count; i++)
 		free(dict->keys[i]);

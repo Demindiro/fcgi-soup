@@ -4,18 +4,24 @@
 #include <sys/stat.h>
 
 
+typedef struct article {
+	char *name;
+	time_t date;
+	char *contents;
+} article;
+
+
 typedef struct article_root {
 	char *root;
 	int count;
 	int size;
-	char **names;
-	struct stat *stats;
+	article *articles;
 } article_root;
 
 
 int article_init(article_root *root, const char *path);
 
-int article_get(article_root *root, const char *uri);
+const char *article_get(article_root *root, const char *uri);
 
 
 #endif

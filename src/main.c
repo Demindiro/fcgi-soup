@@ -115,35 +115,36 @@ static int setup()
 }
 
 
+char *map_or_read_file(int fd, size_t size)
+{
+	char *buf;
+	if (size % getpagesize() > 0) {
+		buf = mmap(NULL, size, PROT_READ | PROT_WRITE , MAP_PRIVATE, fd, 0);
+	} else {
+		buf = malloc(size + 1);
+		read(fd, buf, size);
+	}
+	buf[size] = 0;
+	close(fd);
+	return buf;
+}
+
+void unmap_or_free_file(char *ptr, size_t size)
+{
+	if (size % getpagesize() > 0)
+		munmap(ptr, size);
+	else
+		free(ptr);
+}
+
 int main()
 {
 	if (setup() < 0)
 		return 1;
 	char buf[0x10000];
-	int pagesize = getpagesize();
 	while (FCGI_Accept() >= 0) {	
-		char *map_or_read_file(int fd, size_t size)
-		{
-			char *buf;
-			if (size % pagesize > 0) {
-				buf = mmap(NULL, size, PROT_READ | PROT_WRITE , MAP_PRIVATE, fd, 0);
-			} else {
-				buf = malloc(size + 1);
-				read(fd, buf, size);
-			}
-			buf[size] = 0;
-			close(fd);
-			return buf;
-		}
-		void unmap_or_free_file(char *ptr, size_t size)
-		{
-			if (size % pagesize > 0)
-				munmap(ptr, size);
-			else
-				free(ptr);
-		}
-
 		check_templates();
+
 		// Do not remove this header
 		printf("X-My-Own-Header: All hail the mighty Duck God\r\n");
 		

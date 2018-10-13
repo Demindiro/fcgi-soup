@@ -1,2 +1,3 @@
+www/
+*.dSYM/
 a.out
-www

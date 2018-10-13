@@ -1,17 +1,19 @@
 #include "../include/article.h"
+#include <dirent.h>
+#include <stdlib.h>
+#include <sys/dir.h>
+#include <sys/fcntl.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/mman.h>
-#include <dirent.h>
+#include <unistd.h>
+#include <time.h>
 #include "util/string.h"
-
-#define GET_MMAP   0x1
-#define GET_MALLOC 0x2
 
 
 static int to_int(const char **pptr, int *res)
 {
-	char *ptr = *pptr;
+	const char *ptr = *pptr;
 	int num = 0;
 	while (*ptr != '/' && *ptr != 0) {
 		if (*ptr < '0' || '9' < *ptr)
@@ -36,16 +38,16 @@ static int get_month_length(int year, int month)
 }
 
 
-static char *get_between_times(article_root *root, time_t t0, time_t t1, int *code)
+static char *get_between_times(article_root *root, time_t t0, time_t t1)
 {
 	size_t size = 65536, len = 0;
 	char *buf = malloc(size);
 	for (size_t i = 0; i < root->count; i++) {
-		time_t t = root->stats[i].st_time;
+		time_t t = root->articles[i].date;
 		if (t0 <= t && t <= t1) {
-			char  *str  = root->names[i];
+			char  *str  = root->articles[i].name;
 			size_t strl = strlen(str);
-			if (buf_write(&buf, &len, &size, root->names[i], strl + 1) < 0) {
+			if (buf_write(&buf, &len, &size, root->articles[i].name, strl + 1) < 0) {
 				free(buf);
 				return NULL;
 			}
@@ -57,26 +59,33 @@ static char *get_between_times(article_root *root, time_t t0, time_t t1, int *co
 		return NULL;
 	}
 	buf = realloc(buf, len);
-	*code = GET_MALLOC;
 	return buf;
 }
 
 
-static char *mmap_of_time(article_root *root, time_t time, int code)
+static char *article_get_by_time(article_root *root, time_t time)
 {
 	const char *name;
+	char *buf;
+	int fd;
 	for (size_t i = 0; i < root->count; i++) {
-		time_t t = root->stats[i].st_time;
+		time_t t = root->articles[i].date;
 		if (time == t) {
-			name = root->names[i];
+			name = root->articles[i].name;
 			goto found;
 		}
 	}
 	return NULL;
 found:
-	int   fd  = open();
-	char *buf = mmap();
-	*code = GET_MALLOC;
+	fd = open(name, O_RDONLY);
+	if (fd < 0)
+		return NULL;
+	struct stat statbuf;
+	fstat(fd, &statbuf);
+	buf = malloc(statbuf.st_size + 1);
+	read(fd, buf, statbuf.st_size);
+	close(fd);
+	buf[statbuf.st_size] = 0;
 	return buf;
 }
 
@@ -86,80 +95,67 @@ int article_init(article_root *root, const char *path)
 	DIR *dir = opendir(path);
 	if (dir == NULL)
 		return -1;
-	root->root  = copy_string(path);
+	root->root  = string_copy(path);
 	root->size  = 16;
 	root->count = 0;
-	root->names = malloc(root->size * sizeof(*root->names));
-	root->stats = malloc(root->size * sizeof(*root->stats));
-	for (dirent *de = readdir(dir); de != NULL; de = readdir(dir), root->count++) {
-		if (!(de->d_type == DT_FILE || de->d_type == DT_UNKNOWN))
+	root->articles = malloc(root->size * sizeof(*root->articles));
+	for (struct dirent *de = readdir(dir); de != NULL; de = readdir(dir), root->count++) {
+		if (!(de->d_type == DT_REG || de->d_type == DT_UNKNOWN))
 			continue;
-		if (stat(de->d_name, &root->stats[root->count]) < 0)
-			goto error;
-		root->names[root->count] = copy_string(de->d_name);
-		if (root->names[root->count] == NULL)
+		root->articles[root->count].name = string_copy(de->d_name);
+		if (root->articles[root->count].name == NULL)
 			goto error;
 	}
 	closedir(dir);
 	return 0;
 error:
+	closedir(dir);
 	for (size_t i = 0; i < root->count; i++)
-		free(root->names[i]);
-	free(root->names);
-	free(root->stats);
+		free(root->articles[i].name);
+	free(root->articles);
 	free(root->root);
 	return -1;
 }
 
 
-const char *article_get(article_root *root, const char *uri, int *code) {
+const char *article_get(article_root *root, const char *uri) {
 	const char *ptr = uri;
 	struct tm date;
 	time_t time0, time1;
 	int year, month, day;
 	char *buf;
 	if ('0' <= *ptr && *ptr <= '9') {
-		memset(date, 0, sizeof(date));
-		if (to_int(&(  ptr), &year ) < 0 ||
-		    to_int(&(++ptr), &month) < 0 ||
-		    to_int(&(++ptr), &day  ) < 0)
-			return -1;
+		memset(&date, 0, sizeof(date));
+		if (to_int(&ptr, &year ) < 0 || !(ptr++) || // !x if x != 0 --> 0
+		    to_int(&ptr, &month) < 0 || !(ptr++) ||
+		    to_int(&ptr, &day  ) < 0)
+			return NULL;
 		date.tm_year = year  - 1900;
 		if (month == 0) {
 			date.tm_mon  = 0;
 			date.tm_mday = 1;
-			time0 = mktime(date);
+			time0 = mktime(&date);
 			date.tm_mon  = 11;
 			date.tm_mday = 31;
-			time1 = mktime(date);
-			buf = get_between_times(root, time0, time1, code);
+			time1 = mktime(&date);
+			buf = get_between_times(root, time0, time1);
 		} else if (day == 0) {
 			date.tm_mon  = month - 1;
 			date.tm_mday = 1;
-			time0 = mktime(date);
+			time0 = mktime(&date);
 			date.tm_mday = get_month_length(year, month);
-			time1 = mktime(date);
-			buf = get_between_times(root, time0, time1, code);
+			time1 = mktime(&date);
+			buf = get_between_times(root, time0, time1);
 		} else {
 			date.tm_mon  = month - 1;
 			date.tm_mday = day;
-			time0 = mktime(date);
-			buf = mmap_of_time(root, time0, code);
+			time0 = mktime(&date);
+			buf = article_get_by_time(root, time0);
 		}
 	} else if (*ptr == 0) {
 		
 	} else {
 
 	}
-}
-
-void article_free_get(char *ptr, int code) {
-	switch(code) {
-		case GET_MMAP:
-			munmap(ptr);
-			break;
-		case GET_MALLOC:
-			free(ptr);
-			break;
-	}
+	return NULL;
 }

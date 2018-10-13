@@ -15,7 +15,7 @@ typedef struct dictionary {
 
 int dict_create(dictionary *dict);
 
-int dict_free(dictionary *dict);
+void dict_free(dictionary *dict);
 
 const char *dict_get(const dictionary *dict, const char *key);
 

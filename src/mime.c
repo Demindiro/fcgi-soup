@@ -6,7 +6,8 @@ static dictionary dict;
 
 
 static const char *mime_map[] = {
-	"html", "text/html"
+	"html", "text/html",
+	"txt" , "text/plain",
 };
 static const size_t mime_map_count = sizeof(mime_map) / sizeof(*mime_map) / 2;
 

@@ -14,47 +14,50 @@ static size_t grow(void *ptr, size_t len, size_t size) {
 }
 
 
+static int check_bufs(template *temp, size_t *size) {
+	if (temp->count >= *size) {
+		if (grow(&temp->parts  , *size, sizeof(*temp->parts  )) == -1 ||
+		    grow(&temp->keys   , *size, sizeof(*temp->keys   )) == -1)
+			return -1;
+		size_t s = grow(temp->lengths, *size, sizeof(*temp->lengths));
+		if (s == -1)
+			return -1;
+		*size = s;
+	}
+	return 0;
+}
+
+
+static int copy_part(template *temp, const char *ptr, const char *orgptr, size_t *size) {
+	if (check_bufs(temp, size) < 0)
+		return -1;
+	size_t l = ptr - orgptr;
+	temp->parts[temp->count] = malloc(l);
+	memcpy(temp->parts[temp->count], orgptr, l);
+	temp->lengths[temp->count] = l;
+	return 0;
+}
+
+
 int template_create(template *temp, const char *text)
 {
-	size_t size = 0x10;
+	size_t size   = 0x10;
 	temp->parts   = malloc(size * sizeof(*temp->parts  ));
 	temp->lengths = malloc(size * sizeof(*temp->lengths));
 	temp->keys    = malloc(size * sizeof(*temp->keys   ));
 
 	const char *ptr = text, *orgptr = ptr;
 	for (temp->count = 0; ; temp->count++) {
-		int check_bufs() {
-			if (temp->count >= size) {
-				if (grow(&temp->parts  , size, sizeof(*temp->parts  )) == -1 ||
-				    grow(&temp->keys   , size, sizeof(*temp->keys   )) == -1)
-					return -1;
-				size_t s = grow(temp->lengths, size, sizeof(*temp->lengths));
-				if (s == -1)
-					return -1;
-				size = s;
-			}
-			return 0;
-		}
-		int copy_part() {
-			if (check_bufs() < 0)
-				return -1;
-			size_t l = ptr - orgptr;
-			temp->parts[temp->count] = malloc(l);
-			memcpy(temp->parts[temp->count], orgptr, l);
-			temp->lengths[temp->count] = l;
-			return 0;
-		}
-
 		while (*ptr != '{') {
 			if (*ptr == 0) {
-				if (copy_part() < 0)
+				if (copy_part(temp, ptr, orgptr, &size) < 0)
 					return -1;
 				return 0;
 			}
 			ptr++;
 		}
 
-		if (copy_part() < 0)
+		if (copy_part(temp, ptr, orgptr, &size) < 0)
 			return -1;
 
 		ptr++;
