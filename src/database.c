@@ -106,21 +106,12 @@ int database_get(database *db, char *buf, uint8_t keyfield, const char *key)
 }
 
 
-int database_set(database *db, uint8_t keyfield, const char *key, uint8_t valfield, const char *val)
-{
-	char *entry = get_entry_ptr(db, keyfield, key);
-	if (entry == NULL)
-		return -1;
-	size_t f_offset = get_offset(db, valfield);
-	memcpy(entry + f_offset, val, db->field_lengths[valfield]);
-	return 0;
-}
-
-
 int database_add(database *db, const char *entry)
 {
 	memcpy(db->data + (db->count * db->entry_length), entry, db->entry_length);
 	db->count++;
+	*((uint32_t *)db->mapptr) = db->count;
+	msync(db->mapptr, MMAP_SIZE, MS_ASYNC);
 	return 0;
 }
 
@@ -139,6 +130,14 @@ int database_get_field(database *db, char *buf, const char *entry, uint8_t field
 {
 	size_t f_offset = get_offset(db, field);
 	memcpy(buf, entry + f_offset, db->field_lengths[field]);
+	return 0;
+}
+
+
+int database_set_field(database *db, char *entry, uint8_t field, const void *val)
+{
+	size_t f_offset = get_offset(db, field);
+	memcpy(entry + f_offset, val, db->field_lengths[field]);
 	return 0;
 }
 

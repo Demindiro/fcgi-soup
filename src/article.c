@@ -27,17 +27,6 @@
 #include "../include/dictionary.h"
 #include "../include/template.h"
 
-#define DB_URI_LEN      64
-#define DB_FILE_LEN     256
-#define DB_DATE_LEN     4
-#define DB_AUTHOR_LEN   64
-#define DB_TITLE_LEN    64
-
-#define DB_URI_FIELD    0
-#define DB_FILE_FIELD   1
-#define DB_DATE_FIELD   2
-#define DB_AUTHOR_FIELD 3
-#define DB_TITLE_FIELD  4
 
 #define DEF_TEMP_BODY "<h1>{TITLE}</h1><article>{BODY}</article>"
 
@@ -76,7 +65,7 @@ static void init()
 }
 
 
-static uint32_t format_date(uint year, uint month, uint day, uint hour, uint minute)
+uint32_t format_date(uint year, uint month, uint day, uint hour, uint minute)
 {
 	uint time = hour * 60 + minute;
 	uint32_t date = 0;
@@ -88,7 +77,7 @@ static uint32_t format_date(uint year, uint month, uint day, uint hour, uint min
 }
 
 
-static int date_to_str(char *buf, uint32_t date)
+int date_to_str(char *buf, uint32_t date)
 {
 	uint year   = (date >> 20) & ((1 << 12) - 1);
 	uint month  = (date >> 16) & ((1 <<  4) - 1);

@@ -2,3 +2,4 @@ www/
 *.dSYM/
 a.out
 .DS_Store
+build/
