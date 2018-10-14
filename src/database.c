@@ -37,7 +37,13 @@ static char *get_entry_ptr(database *db, uint8_t keyfield, const char *key)
 
 int database_create(database *db, const char *file, uint8_t field_count, uint16_t *field_lengths)
 {
-	int fd = open(file, O_RDWR);
+	int fd = open(file, O_RDWR | O_CREAT, 0644);
+#ifdef __MACH__
+	if (ftruncate(fd, 4096 << 3) < 0) {
+		close(fd);
+		return -1;
+	}
+#endif
 	if (fd < 0)
 		return -1;
 	char *map = db->mapptr = mmap(NULL, MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
@@ -55,6 +61,7 @@ int database_create(database *db, const char *file, uint8_t field_count, uint16_
 		db->entry_length  += field_lengths[i];
 	}
 	db->data = map;
+	msync(db->mapptr, map - (char *)db->mapptr, MS_ASYNC);
 	return 0;
 }
 

@@ -7,6 +7,8 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include "../include/article.h"
+#include "../include/dictionary.h"
 #include "../include/template.h"
 #include "../include/mime.h"
 
@@ -17,6 +19,8 @@ template container_temp;
 template error_temp;
 dictionary container_dict;
 dictionary error_dict;
+
+article_root blog_root;
 
 
 static int print_error() {
@@ -111,11 +115,13 @@ static int setup()
 		perror("Couldn't create dictionaries");
 		return -1;
 	}
-	return check_templates();
+	if (check_templates() < 0)
+		return -1;
+	return article_init(&blog_root, "blog");
 }
 
 
-char *map_or_read_file(int fd, size_t size)
+static char *map_or_read_file(int fd, size_t size)
 {
 	char *buf;
 	if (size % getpagesize() > 0) {
@@ -129,7 +135,7 @@ char *map_or_read_file(int fd, size_t size)
 	return buf;
 }
 
-void unmap_or_free_file(char *ptr, size_t size)
+static void unmap_or_free_file(char *ptr, size_t size)
 {
 	if (size % getpagesize() > 0)
 		munmap(ptr, size);
@@ -153,67 +159,74 @@ int main()
 			return 1;
 		if (uri[0] == '/')
 			uri++;
-		struct stat statbuf;
-		if (uri[0] == 0)
-			uri = "index.html";
-		if (stat(uri, &statbuf) < 0) {	
-			print_error();
-			continue;
-		}
-		if (S_ISDIR(statbuf.st_mode)) {
-			size_t l = strlen(uri);
-			memcpy(buf, uri, l);
-			memcpy(buf + l, "/index.html", sizeof("/index.html"));
-			uri = buf;
-		}
 
-#ifndef NDEBUG
-		printf("X-Debug-Date: " __DATE__ "\r\n");
-		printf("X-Debug-Time: " __TIME__ "\r\n");
-		printf("X-Debug-URI: %s\r\n", uri);
-#endif
-		int fd = open(uri, O_RDONLY);
-		if (fd < 0) {
-			print_error();
-			continue;
-		}
-		
-		const char *mime = get_mime_type(uri);
-		if (mime != NULL)
-			printf("Content-Type: %s\r\n", mime);
-		printf("Status: 200\r\n"
-		       "\r\n");
-		char *body = map_or_read_file(fd, statbuf.st_size);
-		if (body == NULL) {
-			perror("Error during mapping");
-			continue;
-		}
-		if (mime != NULL && strcmp(mime, "text/html") == 0) {
-			if (dict_set(&container_dict, "BODY", body)) {
-				perror("Error during setting BODY");
+		if (strncmp("blog/", uri, 5) == 0) {
+			char *nuri = uri + 5;
+			const char *body = article_get(&blog_root, nuri);
+			if (body == NULL) {
+				print_error();
+				continue;
+			}
+			dict_set(&container_dict, "BODY", body);
+		} else {
+			struct stat statbuf;
+			if (uri[0] == 0)
+				uri = "index.html";
+			if (stat(uri, &statbuf) < 0) {	
+				print_error();
+				continue;
+			}
+			if (S_ISDIR(statbuf.st_mode)) {
+				size_t l = strlen(uri);
+				memcpy(buf, uri, l);
+				memcpy(buf + l, "/index.html", sizeof("/index.html"));
+				uri = buf;
+			}
+
+			int fd = open(uri, O_RDONLY);
+			if (fd < 0) {
+				print_error();
+				continue;
+			}
+			const char *mime = get_mime_type(uri);
+			if (mime != NULL)
+				printf("Content-Type: %s\r\n", mime);
+			printf("Status: 200\r\n"
+			       "\r\n");
+			char *body = map_or_read_file(fd, statbuf.st_size);
+			if (body == NULL) {
+				perror("Error during mapping");
+				continue;
+			}
+			if (mime != NULL && strcmp(mime, "text/html") == 0) {
+				if (dict_set(&container_dict, "BODY", body)) {
+					perror("Error during setting BODY");
+					unmap_or_free_file(body, statbuf.st_size);
+					continue;
+				}
+				unmap_or_free_file(body, statbuf.st_size);
+			} else {			
+				if (printf("%*s", statbuf.st_size, body) < 0) {
+					perror("Error during writing");
+					unmap_or_free_file(body, statbuf.st_size);
+					continue;
+				}
 				unmap_or_free_file(body, statbuf.st_size);
 				continue;
 			}
-			unmap_or_free_file(body, statbuf.st_size);
-			body = template_parse(&container_temp, &container_dict);
-			if (body == NULL) {
-				perror("Error during parsing");
-				continue;
-			}
-			if (printf("%*s", statbuf.st_size, body) < 0) {
-				perror("Error during writing");
-				free(body);
-				continue;
-			}
-			free(body);
-			fflush(stdout);
-		} else {			
-			if (printf("%*s", statbuf.st_size, body) < 0) {
-				perror("Error during writing");
-				continue;
-			}
-			unmap_or_free_file(body, statbuf.st_size);
 		}
+		char *body = template_parse(&container_temp, &container_dict);
+		if (body == NULL) {
+			perror("Error during parsing");
+			continue;
+		}
+		if (printf("%s", body) < 0) {
+			perror("Error during writing");
+			free(body);
+			continue;
+		}
+		free(body);
+		fflush(stdout);
 	}
 	return 0;
 }

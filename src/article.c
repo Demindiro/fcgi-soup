@@ -1,10 +1,10 @@
 /*
  * Database format:
+ *   -  64 bytes for the uri
  *   - 256 bytes for the name
  *   -   4 bytes for the date
  *     - 12 bits for the year        (covers 4096 years)
- *     -  4 bits for the month       (covers 12 months)
- *     -  5 bits for the day         (covers 31 days)
+ *     -  4 bits for the month       (covers 12 months) *     -  5 bits for the day         (covers 31 days)
  *     - 11 bits for the time of day (covers 1440 minutes)
  *   -  64 bytes for the author's name
  *   -  64 bytes for the title
@@ -24,23 +24,60 @@
 #include <time.h>
 #include "util/string.h"
 #include "../include/database.h"
+#include "../include/dictionary.h"
+#include "../include/template.h"
 
-
-#define DB_NAME_LEN     256
+#define DB_URI_LEN      64
+#define DB_FILE_LEN     256
 #define DB_DATE_LEN     4
 #define DB_AUTHOR_LEN   64
 #define DB_TITLE_LEN    64
 
-#define DB_NAME_FIELD   0
-#define DB_DATE_FIELD   1
-#define DB_AUTHOR_FIELD 2
-#define DB_TITLE_FIELD  3
+#define DB_URI_FIELD    0
+#define DB_FILE_FIELD   1
+#define DB_DATE_FIELD   2
+#define DB_AUTHOR_FIELD 3
+#define DB_TITLE_FIELD  4
+
+#define DEF_TEMP_BODY "<h1>{TITLE}</h1><article>{BODY}</article>"
 
 
 typedef unsigned int uint;
 
 
-static uint32_t format_date(uint year, uint month, uint day, uint hour, uint minute) {
+static template temp;
+
+
+__attribute__((constructor))
+static void init()
+{
+	char *body = NULL;
+	int fd = open("article.phtml", O_RDONLY);
+	if (fd < 0) {
+		template_create(&temp, DEF_TEMP_BODY);
+	} else {
+		struct stat statbuf;
+		if (fstat(fd, &statbuf) < 0) {
+			close(fd);
+			template_create(&temp, DEF_TEMP_BODY);
+		} else {
+			body = malloc(statbuf.st_size + 1);
+			if (body == NULL || read(fd, body, statbuf.st_size) != statbuf.st_size) {
+				close(fd);
+				free(body);
+				template_create(&temp, DEF_TEMP_BODY);
+				return;
+			}
+			close(fd);
+			body[statbuf.st_size] = 0;
+			template_create(&temp, body);
+		}
+	}
+}
+
+
+static uint32_t format_date(uint year, uint month, uint day, uint hour, uint minute)
+{
 	uint time = hour * 60 + minute;
 	uint32_t date = 0;
 	date += (time  & ((1 << 11) - 1)) <<  0;
@@ -48,6 +85,18 @@ static uint32_t format_date(uint year, uint month, uint day, uint hour, uint min
 	date += (month & ((1 <<  4) - 1)) << 16;
 	date += (year  & ((1 << 12) - 1)) << 20;
 	return date;
+}
+
+
+static int date_to_str(char *buf, uint32_t date)
+{
+	uint year   = (date >> 20) & ((1 << 12) - 1);
+	uint month  = (date >> 16) & ((1 <<  4) - 1);
+	uint day    = (date >> 11) & ((1 <<  5) - 1);
+	uint time   = (date >>  0) & ((1 << 11) - 1);
+	uint hour   = time / 60;
+	uint minute = time % 60;
+	return sprintf(buf, "%u-%u-%u %u:%u", year, month, day, hour, minute);
 }
 
 
@@ -74,10 +123,10 @@ static char *article_get_between_times(article_root *root, uint32_t t0, uint32_t
 	const char **entries;
 	size_t count = database_get_range(&root->db, &entries, DB_DATE_FIELD, &t0, &t1);
 	for (size_t i = 0; i < count; i++) {
-		char name[DB_NAME_LEN + 1], title[DB_TITLE_LEN + 1];
-		database_get_field(&root->db, name, entries[i], DB_NAME_FIELD);
+		char name[DB_FILE_LEN + 1], title[DB_TITLE_LEN + 1];
+		database_get_field(&root->db, name, entries[i], DB_FILE_FIELD);
 		database_get_field(&root->db, name, entries[i], DB_TITLE_FIELD);
-		name [DB_NAME_LEN ] = 0;
+		name [DB_FILE_LEN ] = 0;
 		title[DB_TITLE_LEN] = 0;
 		char link[512];
 		ssize_t l = sprintf(link, "<a href=\"%s\">%s</a><br>", name, title);
@@ -98,18 +147,28 @@ static char *article_get_between_times(article_root *root, uint32_t t0, uint32_t
 
 int article_init(article_root *root, const char *path)
 {
-	char buf[256];
-	size_t l = strlen(path);
-	root->dir = malloc(l + 1);
+	size_t l = strlen(path);	
+	
+	int append_slash = path[l-1] != '/';
+	root->dir = malloc(l + append_slash);
 	if (root->dir == NULL)
 		return -1;
-	
+	memcpy(root->dir, path, l);
+	if (append_slash) {
+		root->dir[l+0] = '/';
+		root->dir[l+1] = 0;
+	} else {
+		root->dir[l] = 0;
+	}
+
+	char buf[256];
 	memcpy(buf, path, l);
 	memcpy(buf + l, ".db", sizeof(".db"));
 	if (database_load(&root->db, buf) < 0) {
-		uint8_t f_count = 4;
-		uint16_t f_lens[4] = {
-			[DB_NAME_FIELD  ] = DB_NAME_LEN  ,
+		uint8_t f_count = 5;
+		uint16_t f_lens[5] = {
+			[DB_URI_FIELD   ] = DB_URI_LEN   ,
+			[DB_FILE_FIELD  ] = DB_FILE_LEN  ,
 			[DB_DATE_FIELD  ] = DB_DATE_LEN  ,
 			[DB_AUTHOR_FIELD] = DB_AUTHOR_LEN,
 			[DB_TITLE_FIELD ] = DB_TITLE_LEN ,
@@ -149,18 +208,21 @@ const char *article_get(article_root *root, const char *uri) {
 	} else if (*ptr == 0) {
 		return article_get_between_times(root, 0, 0xFFffFFff);	
 	} else {
+		char dburi[DB_FILE_LEN];
+		memset(dburi, 0, sizeof(dburi));
+		strncpy(dburi, uri, sizeof(dburi));
+		char entry[root->db.entry_length];
+		if (database_get(&root->db, entry, DB_URI_FIELD, dburi) < 0)
+			return NULL;
+		
 		char file[512], *ptr = file;
 		size_t l = strlen(root->dir);
 		memcpy(ptr, root->dir, l);
 		ptr += l;
-		*(ptr++) = '/';
-		l = strlen(uri);
-		memcpy(ptr, uri, l);
-		ptr += l;
-		*(ptr++) = '.';
-		*(ptr++) = 'm';
-		*(ptr++) = 'd';
-		*ptr = 0;
+		if (database_get_field(&root->db, ptr, entry, DB_FILE_FIELD) < 0)
+			return NULL;
+		ptr[strlen(ptr)] = 0;
+
 		int fd = open(file, O_RDONLY);
 		if (fd < 0)
 			return NULL;
@@ -171,13 +233,30 @@ const char *article_get(article_root *root, const char *uri) {
 		}
 		char *buf = malloc(statbuf.st_size + 1);
 		if (read(fd, buf, statbuf.st_size) != statbuf.st_size) {
+			close(fd);
 			free(buf);
-			buf = NULL;
-		} else {
-			buf[statbuf.st_size] = 0;
+			return NULL;
 		}
 		close(fd);
-		return buf;
+		buf[statbuf.st_size] = 0;
+		
+		uint32_t date;
+		char title[DB_TITLE_LEN], author[DB_AUTHOR_LEN], datestr[64];
+		if (database_get_field(&root->db, (char *)&date, entry, DB_DATE_FIELD  ) < 0 ||
+		    database_get_field(&root->db,  title , entry, DB_TITLE_FIELD ) < 0 ||
+		    database_get_field(&root->db,  author, entry, DB_AUTHOR_FIELD) < 0 ||
+		    date_to_str(datestr, date) < 0)
+			/* TODO */;
+		dictionary dict;
+		dict_create(&dict);
+		dict_set(&dict, "BODY"  , buf    );
+		dict_set(&dict, "TITLE" , title  );
+		dict_set(&dict, "AUTHOR", author );
+		dict_set(&dict, "DATE"  , datestr);
+		char *body = template_parse(&temp, &dict);
+		dict_free(&dict);
+		free(buf);
+		return body;
 	}
 	return NULL;
 }
