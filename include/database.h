@@ -5,12 +5,12 @@
 
 
 typedef struct database {
-	char    *data; 
-	uint32_t count;
-	uint32_t entry_length;
-	uint8_t  field_count;
-	uint16_t field_lengths[16];
-	void    *mapptr;
+	char     *data; 
+	uint32_t *count;
+	uint32_t  entry_length;
+	uint8_t   field_count;
+	uint16_t  field_lengths[16];
+	void     *mapptr;
 } database;
 
 

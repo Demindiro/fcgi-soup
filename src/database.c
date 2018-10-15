@@ -26,7 +26,7 @@ static size_t get_offset(database *db, uint8_t field)
 static char *get_entry_ptr(database *db, uint8_t keyfield, const char *key)
 {
 	size_t f_offset = get_offset(db, keyfield);
-	for (size_t i = 0; i < db->count; i++) {
+	for (size_t i = 0; i < *db->count; i++) {
 		char *entry = db->data + (i * db->entry_length);
 		if (memcmp(entry + f_offset, key, db->field_lengths[i]) == 0)
 			return entry;
@@ -38,19 +38,17 @@ static char *get_entry_ptr(database *db, uint8_t keyfield, const char *key)
 int database_create(database *db, const char *file, uint8_t field_count, uint16_t *field_lengths)
 {
 	int fd = open(file, O_RDWR | O_CREAT, 0644);
-#ifdef __MACH__
 	if (ftruncate(fd, 4096 << 3) < 0) {
 		close(fd);
 		return -1;
 	}
-#endif
 	if (fd < 0)
 		return -1;
-	char *map = db->mapptr = mmap(NULL, MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-	close(fd);
+	char *map = db->mapptr = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (db->mapptr == NULL)
 		return -1;
-	*((uint32_t *)map) = db->count = 0;
+	db->count = (uint32_t *)map;
+	*db->count = 0;
 	map += sizeof(db->count);
 	*((uint8_t  *)map) = db->field_count  = field_count;
 	map += sizeof(db->field_count);
@@ -62,6 +60,7 @@ int database_create(database *db, const char *file, uint8_t field_count, uint16_
 	}
 	db->data = map;
 	msync(db->mapptr, map - (char *)db->mapptr, MS_ASYNC);
+	close(fd);
 	return 0;
 }
 
@@ -75,7 +74,7 @@ int database_load(database *db, const char *file)
 	if (map == NULL)
 		return -1;
 	db->mapptr = map;
-	db->count = *((uint32_t *)map);
+	db->count = (uint32_t *)map;
 	map += sizeof(db->count);
 	db->field_count = *((uint8_t *)map);
 	map += sizeof(db->field_count);
@@ -108,9 +107,8 @@ int database_get(database *db, char *buf, uint8_t keyfield, const char *key)
 
 int database_add(database *db, const char *entry)
 {
-	memcpy(db->data + (db->count * db->entry_length), entry, db->entry_length);
-	db->count++;
-	*((uint32_t *)db->mapptr) = db->count;
+	memcpy(db->data + (*db->count * db->entry_length), entry, db->entry_length);
+	(*db->count)++;
 	msync(db->mapptr, MMAP_SIZE, MS_ASYNC);
 	return 0;
 }
@@ -144,9 +142,10 @@ int database_set_field(database *db, char *entry, uint8_t field, const void *val
 
 int database_get_range(database *db, const char ***entries, uint8_t field, const void *key0, const void *key1)
 {
+	return -1;
 	size_t i = 0, start, end;
 	size_t f_offset = get_offset(db, field);
-	for ( ; i < db->count; i++) {
+	for ( ; i < *db->count; i++) {
 		char *entry = db->data + (i * db->entry_length);
 		if (memcmp(key0, entry + f_offset, db->entry_length) <= 0) {
 			start = i;
@@ -156,14 +155,14 @@ int database_get_range(database *db, const char ***entries, uint8_t field, const
 	*entries = NULL;
 	return 0;
 found_start:
-	for ( ; i < db->count; i++) {
+	for ( ; i < *db->count; i++) {
 		char *entry = db->data + (i * db->entry_length);
 		if (memcmp(entry + f_offset, key1, db->entry_length) < 0) {
 			end = i;
 			goto found_end;
 		}
 	}
-	end = db->count;
+	end = *db->count;
 found_end:
 	*entries = malloc((end - start) * sizeof(char *));
 	for (size_t j = 0, i = start; i < end; i++)
