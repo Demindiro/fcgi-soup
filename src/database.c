@@ -80,6 +80,8 @@ int database_create(database *db, const char *file, uint8_t field_count, uint16_
 		db->entry_length  += field_lengths[i];
 	}
 	
+	strcpy(db->name, file);
+	
 	memset(db->maps, 0, sizeof(db->maps));
 	for (size_t i = 0; i < field_count; i++) {
 
@@ -102,9 +104,12 @@ int database_load(database *db, const char *file)
 	char *map = mmap(NULL, MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (map == NULL)
 		return -1;
+
 	db->mapptr = map;
+
 	db->count = (uint32_t *)map;
 	map += sizeof(db->count);
+
 	db->field_count = *((uint8_t *)map);
 	map += sizeof(db->field_count);
 	db->entry_length = 0;
@@ -113,6 +118,9 @@ int database_load(database *db, const char *file)
 		db->entry_length    += db->field_lengths[i];
 		map += sizeof(*db->field_lengths);
 	}
+
+	strcpy(db->name, file);
+
 	for (size_t i = 0; i < db->field_count; i++) {
 		char name[256];
 		if (get_map_name(db, i, name, sizeof(name)) < 0)
@@ -152,7 +160,7 @@ int database_create_map(database *db, uint8_t field)
 	    db->maps[field].data != NULL ||
 	    get_map_name(db, field, name, sizeof(name)) < 0)
 		return -1;
-	int fd = open(name, O_RDWR | O_CREAT);
+	int fd = open(name, O_RDWR | O_CREAT, 0644);
 	if (fd < 0)
 		return -1;
 	// TODO
@@ -161,10 +169,9 @@ int database_create_map(database *db, uint8_t field)
 		return -1;
 	}
 	char *map = mmap(NULL, MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-	if (map == NULL) {
-		close(fd);
+	close(fd);
+	if (map == NULL)
 		return -1;
-	}
 	db->maps[field].count = (uint32_t *)map;
 	db->maps[field].data  = map + sizeof(*db->maps[field].count);
 	return 0;	
