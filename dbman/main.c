@@ -8,6 +8,10 @@
 int main(int argc, char **argv)
 {
 	char uri[DB_URI_LEN+1], file[DB_FILE_LEN+1], author[DB_AUTHOR_LEN+1], title[DB_TITLE_LEN+1];
+	memset(uri   , 0, sizeof(uri   ));
+	memset(file  , 0, sizeof(file  ));
+	memset(author, 0, sizeof(author));
+	memset(title , 0, sizeof(title ));
 	char *dbfile;
 	uint32_t date;
 	database db;	
