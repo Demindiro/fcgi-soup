@@ -80,11 +80,6 @@ int database_create(database *db, const char *file, uint8_t field_count, uint16_
 		db->entry_length  += field_lengths[i];
 	}
 	
-	memset(db->maps, 0, sizeof(db->maps));
-	for (size_t i = 0; i < field_count; i++) {
-
-	}
-
 	db->data = map;
 	msync(db->mapptr, map - (char *)db->mapptr, MS_ASYNC);
 	close(fd);
@@ -100,9 +95,12 @@ int database_load(database *db, const char *file)
 	char *map = mmap(NULL, MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (map == NULL)
 		return -1;
+
 	db->mapptr = map;
+
 	db->count = (uint32_t *)map;
 	map += sizeof(db->count);
+
 	db->field_count = *((uint8_t *)map);
 	map += sizeof(db->field_count);
 	db->entry_length = 0;
@@ -111,6 +109,12 @@ int database_load(database *db, const char *file)
 		db->entry_length    += db->field_lengths[i];
 		map += sizeof(*db->field_lengths);
 	}
+<<<<<<< HEAD
+=======
+
+	strcpy(db->name, file);
+
+>>>>>>> database
 	for (size_t i = 0; i < db->field_count; i++) {
 		char name[256];
 		if (get_map_name(db, i, name, sizeof(name)) < 0)
@@ -150,7 +154,11 @@ int database_create_map(database *db, uint8_t field)
 	    db->maps[field].data != NULL ||
 	    get_map_name(db, field, name, sizeof(name)) < 0)
 		return -1;
+<<<<<<< HEAD
 	int fd = open(name, O_RDWR | O_CREAT);
+=======
+	int fd = open(name, O_RDWR | O_CREAT, 0644);
+>>>>>>> database
 	if (fd < 0)
 		return -1;
 	// TODO
@@ -159,10 +167,16 @@ int database_create_map(database *db, uint8_t field)
 		return -1;
 	}
 	char *map = mmap(NULL, MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+<<<<<<< HEAD
 	if (map == NULL) {
 		close(fd);
 		return -1;
 	}
+=======
+	close(fd);
+	if (map == NULL)
+		return -1;
+>>>>>>> database
 	db->maps[field].count = (uint32_t *)map;
 	db->maps[field].data  = map + sizeof(*db->maps[field].count);
 	return 0;	
@@ -239,6 +253,7 @@ uint32_t database_get_range(database *db, const char ***entries, uint8_t field, 
 				end = i - 1;
 				goto found_end;
 			}
+<<<<<<< HEAD
 		}
 		end = *map.count;
 	found_end:;
@@ -248,6 +263,17 @@ uint32_t database_get_range(database *db, const char ***entries, uint8_t field, 
 			size_t index = *((uint32_t *)map.data + (i * elen) + flen);
 			(*entries)[j] = db->data + (index * db->entry_length);
 		}
+=======
+		}
+		end = *map.count;
+	found_end:;
+		size_t count = end - start;
+		*entries = malloc(count * sizeof(char *));
+		for (size_t j = 0, i = start; i < end; i++, j++) {
+			size_t index = *((uint32_t *)map.data + (i * elen) + flen);
+			(*entries)[j] = db->data + (index * db->entry_length);
+		}
+>>>>>>> database
 		return count;
 	} else {
 		size_t size = 16, len = 0, count = 0;
