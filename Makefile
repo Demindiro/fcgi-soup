@@ -5,11 +5,11 @@ db  = gdb
 mem = valgrind
 
 
-debug:
+build_debug:
 	gcc $(soup_src) -lfcgi -Og -g -o build/soup
 	gcc $(dbman_src) -Og -g -o build/dbman
 
-release:
+build_release:
 	gcc $(soup_src) -lfcgi -O2 -o build/soup
 	gcc $(dbman_src) -O2 -o build/dbman
 
@@ -17,8 +17,8 @@ release:
 run:
 	(cd www; REQUEST_URI=$(URI) ../build/soup)
 
-debug_db:
+run_db:
 	(cd www; REQUEST_URI=$(URI) $(db) ../build/soup)
 
-debug_mem:
+run_mem:
 	(cd www; REQUEST_URI=$(URI) $(mem) ../build/soup)
