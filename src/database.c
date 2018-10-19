@@ -197,19 +197,18 @@ int database_add(database *db, const char *entry)
 		size_t j;
 		size_t flen = db->field_lengths[i], elen = flen + sizeof(*db->count);
 		const char *field = entry + get_offset(db, i);
-		char *rdata = map.data + sizeof(*db->count);
 		for (j = 0; j < *map.count; j++) {
 			char *key = map.data + (j * elen);
 			int cmp = memcmp(field, key, flen);
 			if (cmp == 0)
 				return -1; // No dupes (TODO: Undo other maps)
 			if (cmp < 0) {
-				memmove(rdata + (j * elen), rdata + ((j + 1) * elen), flen);
+				memmove(map.data + (j * elen), map.data + ((j + 1) * elen), flen);
 				break;
 			}
 		}
-		memcpy(rdata + (j * elen), field, flen);
-		*((uint32_t *)(rdata + (j * elen) + flen)) = *db->count;
+		memcpy(map.data + (j * elen), field, flen);
+		*((uint32_t *)(map.data + (j * elen) + flen)) = *db->count;
 		(*map.count)++;
 	}
 	memcpy(db->data + (*db->count * db->entry_length), entry, db->entry_length);
