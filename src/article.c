@@ -166,6 +166,8 @@ int article_init(article_root *root, const char *path)
 			free(root->dir);
 			return -1;
 		}
+		database_create_map(&root->db, DB_URI_FIELD);
+		database_create_map(&root->db, DB_DATE_FIELD);
 	}
 	return 0;
 }
