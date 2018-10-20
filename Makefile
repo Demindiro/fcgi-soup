@@ -1,8 +1,14 @@
+proj_root = $(shell pwd)
 soup_src  = src/*.c
 dbman_src = dbman/main.c src/article.c src/dictionary.c src/template.c src/database.c
 
 db  = gdb
 mem = valgrind
+
+
+ifndef ROOT
+	ROOT = www
+endif
 
 
 build_debug:
@@ -15,10 +21,10 @@ build_release:
 
 
 run:
-	(cd www; REQUEST_URI=$(URI) ../build/soup)
+	(cd $(ROOT); REQUEST_URI=$(URI) $(proj_root)/build/soup)
 
 run_db:
-	(cd www; REQUEST_URI=$(URI) $(db) ../build/soup)
+	(cd $(ROOT); REQUEST_URI=$(URI) $(db) $(proj_root)/build/soup)
 
 run_mem:
-	(cd www; REQUEST_URI=$(URI) $(mem) ../build/soup)
+	(cd $(ROOT); REQUEST_URI=$(URI) $(mem) $(proj_root)/build/soup)
