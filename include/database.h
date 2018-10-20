@@ -21,6 +21,9 @@ typedef struct database {
 	database_map  maps[DB_MAX_FIELDS];
 	char          name[256];
 	void         *mapptr;
+	#ifdef MULTIMACHINE_RDONLY
+	time_t        mtime;
+	#endif
 } database;
 
 

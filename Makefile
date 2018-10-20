@@ -12,11 +12,11 @@ endif
 
 
 build_debug:
-	gcc $(soup_src) -lfcgi -Og -g -o build/soup
+	gcc $(soup_src) -lfcgi -Og -g -o build/soup -DMULTIMACHINE_RDONLY
 	gcc $(dbman_src) -Og -g -o build/dbman
 
 build_release:
-	gcc $(soup_src) -lfcgi -O2 -o build/soup
+	gcc $(soup_src) -lfcgi -O2 -o build/soup -DMULTIMACHINE_RDONLY
 	gcc $(dbman_src) -O2 -o build/dbman
 
 

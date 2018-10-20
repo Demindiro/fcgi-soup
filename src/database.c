@@ -16,6 +16,12 @@
 #define MMAP_SIZE (1U << 30)
 
 
+#ifdef MULTIMACHINE_RDONLY
+  #undef MAP_SHARED
+  #define MAP_SHARED MAP_PRIVATE
+#endif
+
+
 
 static size_t get_offset(database *db, uint8_t field)
 {
@@ -54,6 +60,27 @@ static int get_map_name(database *db, uint8_t field, char *buf, size_t size)
 }
 
 
+/*
+ * MULTIMACHINE_PATCH
+ */
+static int sync_db(database *db)
+{
+#ifdef MULTIMACHINE_RDONLY
+	struct stat s;
+	if (stat(db->name, &s) < 0)
+		return -1;
+	if (s.st_mtime != db->mtime) {
+		database db2;
+		if (database_load(&db2, db->name) < 0)
+			return -1;
+		database_free(db);
+		*db = db2;
+	}
+#endif
+	return 0;
+}
+
+
 
 int database_create(database *db, const char *file, uint8_t field_count, uint16_t *field_lengths)
 {
@@ -66,6 +93,13 @@ int database_create(database *db, const char *file, uint8_t field_count, uint16_
 		return -1;
 	}
 	char *map = db->mapptr = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+#ifdef MULTIMACHINE_RDONLY
+	struct stat s;
+	if (fstat(fd, &s) < 0)
+		/* TODO */;
+	db->mtime = s.st_mtime;
+#endif
+	close(fd);
 	if (db->mapptr == NULL)
 		return -1;
 	
@@ -83,15 +117,9 @@ int database_create(database *db, const char *file, uint8_t field_count, uint16_
 	}
 	
 	strcpy(db->name, file);
-	
-	memset(db->maps, 0, sizeof(db->maps));
-	for (size_t i = 0; i < field_count; i++) {
-
-	}
 
 	db->data = map;
-	msync(db->mapptr, map - (char *)db->mapptr, MS_ASYNC);
-	close(fd);
+	
 	return 0;
 }
 
@@ -102,6 +130,13 @@ int database_load(database *db, const char *file)
 	if (fd < 0)
 		return -1;
 	char *map = mmap(NULL, MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+#ifdef MULTIMACHINE_RDONLY
+	struct stat s;
+	if (fstat(fd, &s) < 0)
+		/* TODO */;
+	db->mtime = s.st_mtime;
+#endif
+	close(fd);
 	if (map == NULL)
 		return -1;
 
@@ -155,6 +190,9 @@ void database_free(database *db)
 
 int database_create_map(database *db, uint8_t field)
 {
+#ifdef MULTIMACHINE_RDONLY
+	return -1;
+#endif
 	char name[256];
 	if (field >= db->field_count ||
 	    db->maps[field].data != NULL ||
@@ -180,6 +218,7 @@ int database_create_map(database *db, uint8_t field)
 
 int database_get(database *db, char *buf, uint8_t keyfield, const char *key)
 {
+	sync_db(db);
 	const char *entry = get_entry_ptr(db, keyfield, key);
 	if (entry == NULL)
 		return -1;
@@ -190,6 +229,9 @@ int database_get(database *db, char *buf, uint8_t keyfield, const char *key)
 
 int database_add(database *db, const char *entry)
 {
+#ifdef MULTIMACHINE_RDONLY
+	return -1;
+#endif
 	for (size_t i = 0; i < db->field_count; i++) {
 		database_map map = db->maps[i];
 		if (map.data == NULL)
@@ -220,6 +262,9 @@ int database_add(database *db, const char *entry)
 
 int database_del(database *db, uint8_t keyfield, const char *key)
 {
+#ifdef MULTIMACHINE_RDONLY
+	return -1;
+#endif
 	char *entry = get_entry_ptr(db, keyfield, key);
 	if (entry == NULL)
 		return -1;
@@ -247,6 +292,7 @@ int database_set_field(database *db, char *entry, uint8_t field, const void *val
 
 uint32_t database_get_range(database *db, const char ***entries, uint8_t field, const void *key0, const void *key1)
 {
+	sync_db(db);
 	if (field >= db->field_count)
 		return -1;
 
