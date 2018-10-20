@@ -66,6 +66,7 @@ int database_create(database *db, const char *file, uint8_t field_count, uint16_
 		return -1;
 	}
 	char *map = db->mapptr = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	close(fd);
 	if (db->mapptr == NULL)
 		return -1;
 	
@@ -84,14 +85,8 @@ int database_create(database *db, const char *file, uint8_t field_count, uint16_
 	
 	strcpy(db->name, file);
 	
-	memset(db->maps, 0, sizeof(db->maps));
-	for (size_t i = 0; i < field_count; i++) {
-
-	}
-
 	db->data = map;
 	msync(db->mapptr, map - (char *)db->mapptr, MS_ASYNC);
-	close(fd);
 	return 0;
 }
 
@@ -102,6 +97,7 @@ int database_load(database *db, const char *file)
 	if (fd < 0)
 		return -1;
 	char *map = mmap(NULL, MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	close(fd);
 	if (map == NULL)
 		return -1;
 
