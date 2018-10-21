@@ -191,8 +191,6 @@ int main()
 			const char *mime = get_mime_type(uri);
 			if (mime != NULL)
 				printf("Content-Type: %s\r\n", mime);
-			printf("Status: 200\r\n"
-			       "\r\n");
 			char *body = map_or_read_file(fd, statbuf.st_size);
 			if (body == NULL) {
 				perror("Error during mapping");
@@ -220,7 +218,7 @@ int main()
 			perror("Error during parsing");
 			continue;
 		}
-		if (printf("%s", body) < 0) {
+		if (printf("Status: 200\r\n\r\n%s", body) < 0) {
 			perror("Error during writing");
 			free(body);
 			continue;
