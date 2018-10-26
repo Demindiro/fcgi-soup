@@ -17,7 +17,10 @@
  */
 typedef struct database_map {
 	char     *data;
-	uint32_t *count;
+	union { // The first four bytes happen to be the count, so it points to the same address as mapptr
+		uint32_t *count;
+		void     *mapptr;
+	};
 } database_map;
 
 /*
@@ -27,13 +30,15 @@ typedef struct database_map {
  */
 typedef struct database {
 	char         *data; 
-	uint32_t     *count;
+	union {
+		uint32_t     *count;
+		void         *mapptr;
+	};
 	uint32_t      entry_length;
 	uint8_t       field_count;
 	uint16_t      field_lengths[DB_MAX_FIELDS];
 	database_map  maps[DB_MAX_FIELDS];
 	char          name[256];
-	void         *mapptr;
 } database;
 
 /*
