@@ -1,7 +1,9 @@
 #ifndef DATABASE_H
 #define DATABASE_H
 
+
 #include <stdint.h>
+#include <sys/types.h>
 
 
 #define DB_MAX_FIELDS 16
@@ -55,36 +57,59 @@ void database_free(database *db);
 int database_create_map(database *db, uint8_t field);
 
 /*
- * Searches for an entry and copies it to the given buffer.
+ * Searches for an entry and returns it. If the entry is not found, NULL is
+ * returned.
  */
-int database_get(database *db, char *buf, uint8_t field, const char *key);
+const char *database_get(database *db, uint8_t field, const char *key);
+
+/*
+ * Searches for an entry and returns the entry located `offset` entries after
+ * the other found eentry. If the entry is not found or no valid entry exists
+ * `offset` entries after the found entry, NULL is returned. This methods only
+ * works for fields which have a mapping. If no ammping exists, NULL is
+ * returned.
+ */
+const char *database_get_offset(database *db, uint8_t field, const char *key, ssize_t offset);
 
 /*
  * Adds an entry to the database.
+ * On success, 0 is returned. If the entry could not be added, -1 is returned.
  */
 int database_add(database *db, const char *entry);
 
 /*
- * Removes an entry from the database
+ * Removes an entry from the database.
+ * On success, 0 is returned. If the field is out of range or the entry is not
+ * found, -1 is returned.
  */
 int database_del(database *db, uint8_t keyfield, const char *key);
 
 /*
  * Copies the value of a field of a given entry to the given buffer.
+ * On success, 0 is returned, If the field is out of range, -1 is returned.
  */
 int database_get_field(database *db, char *buf, const char *entry, uint8_t field);
 
 /*
- * Sets a field of a given entry of a database. If a mapping is associated with
- * the field, the mapping is also updated.
+ * Sets the field of the given entry to the given value.
+ * On success, 0 is returned. If the field is out of range, -1 is returned.
  */
 int database_set_field(database *db, char *entry, uint8_t field, const void *val);
 
 /*
- * Returns all entries whose fields are within the values of the given keys
- * Fields are compared as if they were integers.
+ * Sets the field of the entry specified by the key. If a mapping is associated
+ * with the field, the mapping is also updated.
+ * On success, 0 is returned. If the entry has not been found, -1 is returned.
  */
-uint32_t database_get_range(database *db, const char ***entries, uint8_t field, const void *key1, const void *key2);
+int database_set_entry_field(database *db, uint8_t keyfield, const char *key,
+                                           uint8_t valfield, const char *value);
+
+/*
+ * Returns all entries whose fields are within the values of the given keys.
+ * Fields are compared as if they are integers.
+ */
+uint32_t database_get_range(database *db, const char ***entries, uint8_t field,
+                                          const void *key1, const void *key2);
 
 
 #endif

@@ -26,19 +26,6 @@ static size_t get_offset(database *db, uint8_t field)
 }
 
 
-static char *get_entry_ptr(database *db, uint8_t keyfield, const char *key)
-{
-	size_t f_offset = get_offset(db, keyfield);
-	for (size_t i = 0; i < *db->count; i++) {
-		char *entry = db->data + (i * db->entry_length);
-		if (memcmp(entry + f_offset, key, db->field_lengths[i]) == 0)
-			return entry;
-	}
-	errno = ENOENT;
-	return NULL;
-}
-
-
 static int get_map_name(database *db, uint8_t field, char *buf, size_t size)
 {
 	size_t strl = strlen(db->name);
@@ -52,7 +39,6 @@ static int get_map_name(database *db, uint8_t field, char *buf, size_t size)
 	buf[strl  ] =  0;
 	return 0;
 }
-
 
 
 int database_create(database *db, const char *file, uint8_t field_count, uint16_t *field_lengths)
@@ -174,13 +160,28 @@ int database_create_map(database *db, uint8_t field)
 }
 
 
-int database_get(database *db, char *buf, uint8_t keyfield, const char *key)
+const char *database_get(database *db, uint8_t keyfield, const char *key)
 {
-	const char *entry = get_entry_ptr(db, keyfield, key);
+	size_t f_offset = get_offset(db, keyfield);
+	for (size_t i = 0; i < *db->count; i++) {
+		char *entry = db->data + (i * db->entry_length);
+		if (memcmp(entry + f_offset, key, db->field_lengths[i]) == 0)
+			return entry;
+	}
+	errno = ENOENT;
+	return NULL;
+}
+
+
+const char *database_get_offset(database *db, uint8_t keyfield, const char *key, ssize_t offset)
+{
+	const char *entry = database_get(db, keyfield, key);
 	if (entry == NULL)
-		return -1;
-	memcpy(buf, entry, db->entry_length);
-	return 0;
+		return NULL;
+	entry += (ssize_t)db->entry_length * offset;
+	if (entry < db->data || entry > db->data + ((db->entry_length - 1) * *db->count))
+		return NULL;
+	return entry;
 }
 
 
@@ -216,7 +217,7 @@ int database_add(database *db, const char *entry)
 
 int database_del(database *db, uint8_t keyfield, const char *key)
 {
-	char *entry = get_entry_ptr(db, keyfield, key);
+	char *entry = (char *)database_get(db, keyfield, key);
 	if (entry == NULL)
 		return -1;
 	memset(entry, 0, db->entry_length);

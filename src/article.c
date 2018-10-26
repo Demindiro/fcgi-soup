@@ -202,10 +202,11 @@ const char *article_get(article_root *root, const char *uri) {
 		char dburi[DB_FILE_LEN];
 		memset(dburi, 0, sizeof(dburi));
 		strncpy(dburi, uri, sizeof(dburi));
-		char entry[root->db.entry_length];
-		if (database_get(&root->db, entry, DB_URI_FIELD, dburi) < 0)
-			return NULL;
 		
+		const char *entry = database_get(&root->db, DB_URI_FIELD, dburi);
+		if (entry == NULL)
+			return NULL;
+
 		char file[512], *ptr = file;
 		size_t l = strlen(root->dir);
 		memcpy(ptr, root->dir, l);
