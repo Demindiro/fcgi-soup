@@ -165,7 +165,7 @@ const char *database_get(database *db, uint8_t keyfield, const char *key)
 	size_t f_offset = get_offset(db, keyfield);
 	for (size_t i = 0; i < *db->count; i++) {
 		char *entry = db->data + (i * db->entry_length);
-		if (memcmp(entry + f_offset, key, db->field_lengths[i]) == 0)
+		if (memcmp(entry + f_offset, key, db->field_lengths[keyfield]) == 0)
 			return entry;
 	}
 	errno = ENOENT;
