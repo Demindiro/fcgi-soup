@@ -21,19 +21,37 @@
 
 typedef unsigned int uint;
 
-
+/*
+ * An article root is a wrapper around a database containing article entries.
+ * Each entry contains the URI, the file path, the date of submission, the
+ * author's name and the title.
+ */
 typedef struct article_root {
 	struct database db;
 	char *dir;
 } article_root;
 
 
+/*
+ * Loads or creates a new article database for the given path.
+ */
 int article_init(article_root *root, const char *path);
 
+/*
+ * Looks an article up for the given URI and returns it contents if found,
+ * otherwise it returns NULL.
+ */
 const char *article_get(article_root *root, const char *uri);
 
+/*
+ * Formats the given year, month, day, hour and minute into a single 32-bit
+ * integer. This format is used in the database.
+ */
 uint32_t format_date(uint year, uint month, uint day, uint hour, uint minute);
 
+/*
+ * Converts a date to a string. The default format is YYYY-MM-DD hh:mm
+ */
 int date_to_str(char *buf, uint32_t date);
 
 #endif

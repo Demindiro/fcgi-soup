@@ -1,6 +1,10 @@
 #ifndef MIME_H
 #define MIME_H
 
-const char *get_mime_type(const char *ext);
+/*
+ * Gets a mime type given a file name. Simply passing an extension is also
+ * sufficient..
+ */
+const char *get_mime_type(const char *file);
 
 #endif
