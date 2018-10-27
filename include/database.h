@@ -39,9 +39,9 @@ typedef struct database {
 	uint16_t      field_lengths[DB_MAX_FIELDS];
 	database_map  maps[DB_MAX_FIELDS];
 	char          name[256];
-	#ifdef MULTIMACHINE_RDONLY
+	/* NFS_PATCH */
 	time_t        mtime;
-	#endif
+	/* === */
 } database;
 
 /*

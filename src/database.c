@@ -1,4 +1,7 @@
 #include <errno.h>
+/* NFS_PATCH */
+#include <stdio.h> // perror()
+/* === */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,10 +19,10 @@
 #define MMAP_SIZE (1U << 30)
 
 
-#ifdef MULTIMACHINE_RDONLY
-  #undef MAP_SHARED
-  #define MAP_SHARED MAP_PRIVATE
-#endif
+/* NFS_PATCH */
+#undef MAP_SHARED
+#define MAP_SHARED MAP_PRIVATE
+/* === */
 
 
 static size_t get_offset(database *db, uint8_t field)
@@ -46,12 +49,9 @@ static int get_map_name(database *db, uint8_t field, char *buf, size_t size)
 }
 
 
-/*
- * MULTIMACHINE_PATCH
- */
+/* NFS_PATCH */
 static int sync_db(database *db)
 {
-#ifdef MULTIMACHINE_RDONLY
 	struct stat s;
 	if (stat(db->name, &s) < 0)
 		return -1;
@@ -59,12 +59,15 @@ static int sync_db(database *db)
 		database db2;
 		if (database_load(&db2, db->name) < 0)
 			return -1;
-		database_free(db);
+		for (size_t i = 0; i < db->field_count; i++)
+			if (db->maps[i].mapptr != NULL)
+				munmap(db->maps[i].mapptr, MMAP_SIZE);
+		munmap(db->mapptr, MMAP_SIZE);
 		*db = db2;
 	}
-#endif
 	return 0;
 }
+/* === */
 
 
 int database_create(database *db, const char *file, uint8_t field_count, uint16_t *field_lengths)
@@ -72,18 +75,20 @@ int database_create(database *db, const char *file, uint8_t field_count, uint16_
 	int fd = open(file, O_RDWR | O_CREAT, 0644);
 	if (fd < 0)
 		return -1;
-	// TODO this should be done automatically
+	// TODO this should grow dynamicallyy
 	if (ftruncate(fd, 4096 << 3) < 0) {
 		close(fd);
 		return -1;
 	}
 	char *map = db->mapptr = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-#ifdef MULTIMACHINE_RDONLY
+
+	/* NFS_PATCH */
 	struct stat s;
 	if (fstat(fd, &s) < 0)
-		/* TODO */;
+		return -1;
 	db->mtime = s.st_mtime;
-#endif
+	/* === */
+
 	close(fd);
 	if (db->mapptr == NULL)
 		return -1;
@@ -115,12 +120,14 @@ int database_load(database *db, const char *file)
 	if (fd < 0)
 		return -1;
 	char *map = mmap(NULL, MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-#ifdef MULTIMACHINE_RDONLY
+	
+	/* NFS_PATCH */
 	struct stat s;
 	if (fstat(fd, &s) < 0)
-		/* TODO */;
+		return -1;
 	db->mtime = s.st_mtime;
-#endif
+	/* === */
+
 	close(fd);
 	if (map == NULL)
 		return -1;
@@ -165,21 +172,55 @@ int database_load(database *db, const char *file)
 
 void database_free(database *db)
 {
+	/* NFS_PATCH */
+	struct stat s;
+	int fd = -1;
+	if (stat(db->name, &s) < 0)
+		goto error;
+	if (s.st_mtime != db->mtime)
+		goto error;
+	fd = open(db->name, O_WRONLY);
+	if (fd < 0)
+		goto error;
+	size_t len = sizeof(*db->count);
+	len += sizeof(db->field_count);
+	len += sizeof(*db->field_lengths) * db->field_count;
+	len += db->entry_length * *db->count;
+	if (write(fd, db->count, len) < 0)
+		goto error;
 	for (size_t i = 0; i < db->field_count; i++) {
-		if (db->maps[i].data != NULL)
-			munmap(db->maps[i].data - sizeof(*db->maps[i].count), MMAP_SIZE);
+		database_map map = db->maps[i];
+		if (map.mapptr != NULL) {
+			char buf[256];
+			if (get_map_name(db, i, buf, sizeof(buf)) < 0)
+				goto error;
+			int fd = open(buf, O_WRONLY);
+			if (fd < 0) {
+				close(fd);
+				goto error;
+			}
+			size_t len = sizeof(*map.count);
+			len += (*map.count * (db->field_lengths[i] + sizeof(*db->count)));
+			write(fd, map.mapptr, len);
+			close(fd);
+		}
 	}
+	goto success;
+error:
+	perror(NULL);
+success:
+	close(fd);
+	/* === */
+	for (size_t i = 0; i < db->field_count; i++)
+		if (db->maps[i].mapptr != NULL)
+			munmap(db->maps[i].mapptr, MMAP_SIZE);
 	munmap(db->mapptr, MMAP_SIZE);
 }
 
 
+
 int database_create_map(database *db, uint8_t field)
 {
-/* TODO find a permnanent solution
-#ifdef MULTIMACHINE_RDONLY
-	return -1;
-#endif
-*/
 	char name[256];
 	if (field >= db->field_count ||
 	    db->maps[field].data != NULL ||
@@ -230,27 +271,36 @@ const char *database_get_offset(database *db, uint8_t keyfield, const char *key,
 
 int database_add(database *db, const char *entry)
 {
-#ifdef MULTIMACHINE_RDONLY
-	return -1;
-#endif
+	size_t indices[db->field_count];
+	// Verify first that there are no duplicate fields in the mappings
 	for (size_t i = 0; i < db->field_count; i++) {
 		database_map map = db->maps[i];
 		if (map.data == NULL)
 			continue;
-		size_t j;
 		size_t flen = db->field_lengths[i], elen = flen + sizeof(*db->count);
 		const char *field = entry + get_offset(db, i);
-		for (j = 0; j < *map.count; j++) {
+		for (size_t j = 0; j < *map.count; j++) {
 			char *key = map.data + (j * elen);
 			int cmp = memcmp(field, key, flen);
 			if (cmp == 0)
-				return -1; // No dupes (TODO: Undo other maps)
+				return -1;
 			if (cmp < 0) {
-				memmove(map.data + ((j + 1) * elen), map.data + (j * elen),
-				        elen * (*map.count - j));
-				break;
+				indices[i] = j;
+				goto next_field;
 			}
 		}
+		indices[i] = *map.count;
+		next_field:;
+	}
+	for (size_t i = 0; i < db->field_count; i++) {
+		database_map map = db->maps[i];
+		if (map.data == NULL)
+			continue;
+		const char *field = entry + get_offset(db, i);
+		size_t flen = db->field_lengths[i], elen = flen + sizeof(*db->count);
+		size_t j = indices[i];
+		memmove(map.data + ((j + 1) * elen), map.data + (j * elen),
+		        elen * (*map.count - j));
 		memcpy(map.data + (j * elen), field, flen);
 		*((uint32_t *)(map.data + (j * elen) + flen)) = *db->count;
 		(*map.count)++;
@@ -264,9 +314,6 @@ int database_add(database *db, const char *entry)
 
 int database_del(database *db, uint8_t keyfield, const char *key)
 {
-#ifdef MULTIMACHINE_RDONLY
-	return -1;
-#endif
 	char *entry = (char *)database_get(db, keyfield, key);
 	if (entry == NULL)
 		return -1;
