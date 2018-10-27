@@ -22,6 +22,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <time.h>
+#include <arpa/inet.h> // htonl()
 #include "util/string.h"
 #include "../include/database.h"
 #include "../include/dictionary.h"
@@ -98,6 +99,7 @@ static int to_uint(const char **pptr, uint *res)
 			return -1;
 		num *= 10;
 		num += *ptr - '0';
+		ptr++;
 	}
 	*res  = num;
 	*pptr = ptr;
@@ -107,18 +109,20 @@ static int to_uint(const char **pptr, uint *res)
 
 static char *article_get_between_times(article_root *root, uint32_t t0, uint32_t t1)
 {
+	t0 = htonl(t0);
+	t1 = htonl(t1);
 	size_t size = 65536, len = 0;
 	char *buf = malloc(size);
 	const char **entries;
 	size_t count = database_get_range(&root->db, &entries, DB_DATE_FIELD, &t0, &t1);
 	for (size_t i = 0; i < count; i++) {
-		char name[DB_FILE_LEN + 1], title[DB_TITLE_LEN + 1];
-		database_get_field(&root->db, name, entries[i], DB_FILE_FIELD);
-		database_get_field(&root->db, name, entries[i], DB_TITLE_FIELD);
-		name [DB_FILE_LEN ] = 0;
+		char uri[DB_URI_LEN + 1], title[DB_TITLE_LEN + 1];
+		database_get_field(&root->db, uri  , entries[i], DB_URI_FIELD  );
+		database_get_field(&root->db, title, entries[i], DB_TITLE_FIELD);
+		uri  [DB_URI_LEN  ] = 0;
 		title[DB_TITLE_LEN] = 0;
 		char link[512];
-		ssize_t l = sprintf(link, "<a href=\"%s\">%s</a><br>", name, title);
+		ssize_t l = sprintf(link, "<a href=\"%s\">%s</a><br>", uri, title);
 		if (l < 0 || buf_write(&buf, &len, &size, link, l) < 0) {
 			free(buf);
 			return NULL;
@@ -176,16 +180,15 @@ int article_init(article_root *root, const char *path)
 const char *article_get(article_root *root, const char *uri) {
 	const char *ptr = uri;
 	if ('0' <= *ptr && *ptr <= '9') {
-		uint year, month, day;
+		uint year = 0, month = 0, day = 0;
 		uint32_t time0, time1;
-		if (to_uint(&ptr, &year ) < 0 || !(ptr++) || // !x if x != 0 --> 0
-		    to_uint(&ptr, &month) < 0 || !(ptr++) ||
-		    to_uint(&ptr, &day  ) < 0)
+		if (to_uint(&ptr, &year ) < 0)
 			return NULL;
-		if (year == 0) {
-			time0 = 0;
-			time1 = 0xFFffFFff;
-		} else if (month == 0) {
+                if (*ptr != 0 && ptr++ && to_uint(&ptr, &month) < 0)
+			return NULL;
+		if (*ptr != 0 && ptr++ && to_uint(&ptr, &day  ) < 0)
+			return NULL;
+		if (month == 0) {
 			time0 = format_date(year,  0,  0,  0,  0);
 			time1 = format_date(year, 11, 31, 23, 59);
 		} else if (day == 0) {
@@ -241,7 +244,7 @@ const char *article_get(article_root *root, const char *uri) {
 		if (database_get_field(&root->db, (char *)&date, entry, DB_DATE_FIELD  ) < 0 ||
 		    database_get_field(&root->db,  title , entry, DB_TITLE_FIELD ) < 0 ||
 		    database_get_field(&root->db,  author, entry, DB_AUTHOR_FIELD) < 0 ||
-		    date_to_str(datestr, date) < 0 ||
+		    date_to_str(datestr, htonl(date)) < 0 || // memcmp is effectively big-endian
 		    (prev_entry != NULL && database_get_field(&root->db, prev, prev_entry,
 		                                              DB_URI_FIELD)) ||
 		    (next_entry != NULL && database_get_field(&root->db, next, next_entry,

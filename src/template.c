@@ -163,17 +163,8 @@ char *template_parse(const template *temp, const dictionary *dict)
 			const char *str = dict_get(dict, temp->args[i]);
 			if (str == NULL)
 				str = "NULL";
-			strl = strlen(str);
-			if (bufl < offset + strl) {
-				size_t nbufl = (offset + strl + temp->lengths[i+1] + 1) * 3 / 2;
-				char *tmp = realloc(buf, nbufl);
-				if (tmp == NULL)
-					goto error;
-				buf  = tmp;
-				bufl = nbufl;
-			}
-			memcpy(&buf[offset], str, strl);
-			offset += strl;
+			if (buf_write(&buf, &offset, &bufl, str, strlen(str)) < 0)
+				goto error;
 		} else if (temp->flags[i] & TEMPLATE_COND) {
 			if (temp->flags[i] & TEMPLATE_COND_IFDEF) {
 				if (dict_get(dict, temp->args[i]) == NULL) {
@@ -196,8 +187,8 @@ char *template_parse(const template *temp, const dictionary *dict)
 			errno = EINVAL;
 			goto error;
 		}
-		memcpy(&buf[offset], temp->parts[i+1], temp->lengths[i+1]);
-		offset += temp->lengths[i+1];
+		if (buf_write(&buf, &offset, &bufl, temp->parts[i+1], temp->lengths[i+1]) < 0)
+			goto error;
 	}
 	buf = realloc(buf, offset + 1);
 	buf[offset] = 0;

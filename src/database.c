@@ -16,7 +16,6 @@
 #define MMAP_SIZE (1U << 30)
 
 
-
 static size_t get_offset(database *db, uint8_t field)
 {
 	size_t offset = 0;
@@ -263,17 +262,21 @@ uint32_t database_get_range(database *db, const char ***entries, uint8_t field, 
 	found_start:
 		for ( ; i < *map.count; i++) {
 			char *entry = map.data + (i * elen);
-			if (memcmp(entry, key1, flen) < 0) {
+			if (memcmp(key1, entry, flen) < 0) {
 				end = i - 1;
 				goto found_end;
 			}
 		}
 		end = *map.count;
 	found_end:;
+		if (i == 0)
+			return 0;
 		size_t count = end - start;
 		*entries = malloc(count * sizeof(char *));
-		for (size_t j = 0, i = start; i < end; i++, j++) {
-			size_t index = *((uint32_t *)map.data + (i * elen) + flen);
+		if (*entries == NULL)
+			return -1;
+		for (size_t j = 0, i = start; j < count; j++, i++) {
+			size_t index = *(uint32_t *)(map.data + (i * elen) + flen);
 			(*entries)[j] = db->data + (index * db->entry_length);
 		}
 		return count;
@@ -284,7 +287,7 @@ uint32_t database_get_range(database *db, const char ***entries, uint8_t field, 
 		for (size_t i = 0; i < *db->count; i++) {
 			char *entry = db->data + (i * db->entry_length);
 			if (memcmp(key0, entry + f_offset, db->entry_length) <= 0 &&
-			    memcmp(key0, entry + f_offset, db->entry_length) <= 0) {
+			    memcmp(key1, entry + f_offset, db->entry_length) >= 0) {
 				if (buf_write(&buf, &len, &size, entry, sizeof(entry))) {
 					free(buf);
 					return -1;

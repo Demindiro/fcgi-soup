@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <arpa/inet.h> // htonl()
 #include "../include/article.h"
 #include "../include/database.h"
 
@@ -48,6 +49,7 @@ int main(int argc, char **argv)
 	time_t tt = time(NULL);
 	struct tm *t = localtime(&tt);
 	date = format_date(t->tm_year+1900, t->tm_mon+1, t->tm_mday, t->tm_hour, t->tm_min);
+	date = htonl(date); // Using integers with memcmp requires big-endianness
 
 	char buf[db.entry_length];
 	database_set_field(&db, buf, DB_TITLE_FIELD , title );
