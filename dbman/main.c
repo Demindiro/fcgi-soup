@@ -59,7 +59,7 @@ int main(int argc, char **argv)
 	database_set_field(&db, buf, DB_DATE_FIELD  , &date );
 	database_add(&db, buf);
 
-	date_to_str(buf, date);
+	date_to_str(buf, htonl(date));
 	printf("Entry '%s' added @ '%s'\n", title, buf);
 
 	database_free(&db);

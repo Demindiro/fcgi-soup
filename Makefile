@@ -24,7 +24,7 @@ run:
 	(cd $(ROOT); REQUEST_URI=$(URI) $(proj_root)/build/soup)
 
 run_db:
-	(cd $(ROOT); REQUEST_URI=$(URI) $(db) $(proj_root)/build/soup)
+	(cd $(ROOT); REQUEST_URI=$(URI) $(db) $(DB_FLAGS) $(proj_root)/build/soup)
 
 run_mem:
-	(cd $(ROOT); REQUEST_URI=$(URI) $(mem) $(proj_root)/build/soup)
+	(cd $(ROOT); REQUEST_URI=$(URI) $(mem) $(DB_FLAGS) $(proj_root)/build/soup)
