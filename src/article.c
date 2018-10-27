@@ -202,10 +202,11 @@ const char *article_get(article_root *root, const char *uri) {
 		char dburi[DB_FILE_LEN];
 		memset(dburi, 0, sizeof(dburi));
 		strncpy(dburi, uri, sizeof(dburi));
-		char entry[root->db.entry_length];
-		if (database_get(&root->db, entry, DB_URI_FIELD, dburi) < 0)
-			return NULL;
 		
+		const char *entry = database_get(&root->db, DB_URI_FIELD, dburi);
+		if (entry == NULL)
+			return NULL;
+
 		char file[512], *ptr = file;
 		size_t l = strlen(root->dir);
 		memcpy(ptr, root->dir, l);
@@ -231,19 +232,32 @@ const char *article_get(article_root *root, const char *uri) {
 		close(fd);
 		buf[statbuf.st_size] = 0;
 		
+		const char *prev_entry = database_get_offset(&root->db, DB_URI_FIELD, dburi, -1);
+		const char *next_entry = database_get_offset(&root->db, DB_URI_FIELD, dburi,  1);
+
 		uint32_t date;
-		char title[DB_TITLE_LEN], author[DB_AUTHOR_LEN], datestr[64];
+		char title[DB_TITLE_LEN], author[DB_AUTHOR_LEN], datestr[64],
+		     prev[DB_URI_LEN], next[DB_URI_LEN];
 		if (database_get_field(&root->db, (char *)&date, entry, DB_DATE_FIELD  ) < 0 ||
 		    database_get_field(&root->db,  title , entry, DB_TITLE_FIELD ) < 0 ||
 		    database_get_field(&root->db,  author, entry, DB_AUTHOR_FIELD) < 0 ||
-		    date_to_str(datestr, date) < 0)
+		    date_to_str(datestr, date) < 0 ||
+		    (prev_entry != NULL && database_get_field(&root->db, prev, prev_entry,
+		                                              DB_URI_FIELD)) ||
+		    (next_entry != NULL && database_get_field(&root->db, next, next_entry,
+		                                              DB_URI_FIELD)))
 			/* TODO */;
+
 		dictionary dict;
 		dict_create(&dict);
-		dict_set(&dict, "BODY"  , buf    );
-		dict_set(&dict, "TITLE" , title  );
-		dict_set(&dict, "AUTHOR", author );
-		dict_set(&dict, "DATE"  , datestr);
+		dict_set(&dict, "BODY"    , buf    );
+		dict_set(&dict, "TITLE"   , title  );
+		dict_set(&dict, "AUTHOR"  , author );
+		dict_set(&dict, "DATE"    , datestr);
+		if (prev_entry != NULL)
+			dict_set(&dict, "PREVIOUS", prev);
+		if (next_entry != NULL)
+			dict_set(&dict, "NEXT"    , next);
 		char *body = template_parse(&temp, &dict);
 		dict_free(&dict);
 		free(buf);
