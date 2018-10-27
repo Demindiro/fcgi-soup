@@ -175,9 +175,11 @@ void database_free(database *db)
 
 int database_create_map(database *db, uint8_t field)
 {
+/* TODO find a permnanent solution
 #ifdef MULTIMACHINE_RDONLY
 	return -1;
 #endif
+*/
 	char name[256];
 	if (field >= db->field_count ||
 	    db->maps[field].data != NULL ||
