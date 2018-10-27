@@ -7,14 +7,16 @@
 
 
 /*
- * A template replaces keys denoted by {KEY} with the corresponding value
- * in a dictionary.
+ * A template replaces keys denoted by {{KEY}} with the corresponding value
+ * in a dictionary or includes/excludes a section depending on a condition
+ * denoted by {%cond%}
  */
 typedef struct template {
 	size_t   count;
 	char   **parts;
 	size_t  *lengths;
-	char   **keys;
+	char   **args;
+	int     *flags;
 } template;
 
 /*
