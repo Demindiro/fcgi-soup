@@ -236,21 +236,28 @@ const char *article_get(article_root *root, const char *uri) {
 		close(fd);
 		buf[statbuf.st_size] = 0;
 		
-		const char *prev_entry = database_get_offset(&root->db, DB_URI_FIELD, dburi, -1);
-		const char *next_entry = database_get_offset(&root->db, DB_URI_FIELD, dburi,  1);
+		const char *prev = database_get_offset(&root->db, DB_URI_FIELD, dburi, -1);
+		const char *next = database_get_offset(&root->db, DB_URI_FIELD, dburi,  1);
 
 		uint32_t date;
 		char title[DB_TITLE_LEN], author[DB_AUTHOR_LEN], datestr[64],
-		     prev[DB_URI_LEN], next[DB_URI_LEN];
+		     prev_uri  [DB_URI_LEN  ], next_uri  [DB_URI_LEN  ],
+		     prev_title[DB_TITLE_LEN], next_title[DB_TITLE_LEN];
 		if (database_get_field(&root->db, (char *)&date, entry, DB_DATE_FIELD  ) < 0 ||
 		    database_get_field(&root->db,  title , entry, DB_TITLE_FIELD ) < 0 ||
 		    database_get_field(&root->db,  author, entry, DB_AUTHOR_FIELD) < 0 ||
-		    date_to_str(datestr, htonl(date)) < 0 || // memcmp is effectively big-endian
-		    (prev_entry != NULL && database_get_field(&root->db, prev, prev_entry,
-		                                              DB_URI_FIELD)) ||
-		    (next_entry != NULL && database_get_field(&root->db, next, next_entry,
-		                                              DB_URI_FIELD)))
+		    date_to_str(datestr, htonl(date)) < 0)
 			/* TODO */;
+		if (prev != NULL) { // memcmp is effectively big-endian
+			if (database_get_field(&root->db, prev_uri  , prev, DB_URI_FIELD  ) < 0 ||
+			    database_get_field(&root->db, prev_title, prev, DB_TITLE_FIELD) < 0)
+				/* TODO */;
+		}
+		if (next != NULL) {
+			if (database_get_field(&root->db, next_uri  , next, DB_URI_FIELD  ) < 0 ||
+			    database_get_field(&root->db, next_title, next, DB_TITLE_FIELD) < 0)
+				/* TODO */;
+		}
 
 		dictionary dict;
 		dict_create(&dict);
@@ -258,10 +265,14 @@ const char *article_get(article_root *root, const char *uri) {
 		dict_set(&dict, "TITLE"   , title  );
 		dict_set(&dict, "AUTHOR"  , author );
 		dict_set(&dict, "DATE"    , datestr);
-		if (prev_entry != NULL)
-			dict_set(&dict, "PREVIOUS", prev);
-		if (next_entry != NULL)
-			dict_set(&dict, "NEXT"    , next);
+		if (prev != NULL) {
+			dict_set(&dict, "PREV_URI"  , prev_uri  );
+			dict_set(&dict, "PREV_TITLE", prev_title);
+		}
+		if (next != NULL) {
+			dict_set(&dict, "NEXT_URI"  , next_uri  );
+			dict_set(&dict, "NEXT_TITLE", next_title);
+		}
 		char *body = template_parse(&temp, &dict);
 		dict_free(&dict);
 		free(buf);
