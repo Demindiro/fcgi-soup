@@ -3,7 +3,7 @@
 
 #include <string.h>
 
-static int buf_write(void *pbuf, size_t *index, size_t *size, void *src, size_t count) {
+static int buf_write(void *pbuf, size_t *index, size_t *size, const void *src, size_t count) {
 	void **buf = pbuf;
 	if (*size < *index + count) {
 		void *tmp = realloc(*buf, *size * 3 / 2);
