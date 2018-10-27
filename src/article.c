@@ -254,8 +254,10 @@ const char *article_get(article_root *root, const char *uri) {
 		dict_set(&dict, "TITLE"   , title  );
 		dict_set(&dict, "AUTHOR"  , author );
 		dict_set(&dict, "DATE"    , datestr);
-		dict_set(&dict, "PREVIOUS", prev   );
-		dict_set(&dict, "NEXT"    , next   );
+		if (prev_entry != NULL)
+			dict_set(&dict, "PREVIOUS", prev);
+		if (next_entry != NULL)
+			dict_set(&dict, "NEXT"    , next);
 		char *body = template_parse(&temp, &dict);
 		dict_free(&dict);
 		free(buf);

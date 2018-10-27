@@ -45,6 +45,8 @@ const char *dict_get(const dictionary *dict, const char *key)
 
 int dict_set(dictionary *dict, const char *key, const char *value)
 {
+	if (value == NULL)
+		return 0;
 	size_t i = get_index(dict, key);
 	if (i == -1) {
 		i = dict->count;
