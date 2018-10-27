@@ -143,7 +143,7 @@ int article_init(article_root *root, const char *path)
 	size_t l = strlen(path);	
 	
 	int append_slash = path[l-1] != '/';
-	root->dir = malloc(l + append_slash);
+	root->dir = malloc(l + append_slash + 1);
 	if (root->dir == NULL)
 		return -1;
 	memcpy(root->dir, path, l);
