@@ -6,11 +6,12 @@
 static int buf_write(void *pbuf, size_t *index, size_t *size, const void *src, size_t count) {
 	void **buf = pbuf;
 	if (*size < *index + count) {
-		void *tmp = realloc(*buf, *size * 3 / 2);
+		size_t ns = (*index + count) * 3 / 2
+		void *tmp = realloc(*buf, ns);
 		if (tmp == NULL)
 			return -1;
 		*buf = tmp;
-		*size = *size * 3 / 2;
+		*size = ns;
 	}
 	memcpy(*buf + *index, src, count);
 	*index += count;
