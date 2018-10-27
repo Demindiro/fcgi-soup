@@ -226,5 +226,6 @@ int main()
 		free(body);
 		fflush(stdout);
 	}
+	article_free(&blog_root);
 	return 0;
 }

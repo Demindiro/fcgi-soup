@@ -38,6 +38,11 @@ typedef struct article_root {
 int article_init(article_root *root, const char *path);
 
 /*
+ * Frees memory and stores any changes to the database
+ */
+void article_free(article_root *root);
+
+/*
  * Looks an article up for the given URI and returns it contents if found,
  * otherwise it returns NULL.
  */
