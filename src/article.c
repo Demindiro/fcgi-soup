@@ -269,3 +269,9 @@ const char *article_get(article_root *root, const char *uri) {
 	}
 	return NULL;
 }
+
+void article_free(article_root *root)
+{
+	database_free(&root->db);
+	free(root->dir);
+}
