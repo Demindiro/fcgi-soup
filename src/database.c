@@ -186,24 +186,36 @@ const char *database_get_offset(database *db, uint8_t keyfield, const char *key,
 
 int database_add(database *db, const char *entry)
 {
+	size_t indices[db->field_count];
+	// Verify first that there are no duplicate fields in the mappings
 	for (size_t i = 0; i < db->field_count; i++) {
 		database_map map = db->maps[i];
 		if (map.data == NULL)
 			continue;
-		size_t j;
 		size_t flen = db->field_lengths[i], elen = flen + sizeof(*db->count);
 		const char *field = entry + get_offset(db, i);
-		for (j = 0; j < *map.count; j++) {
+		for (size_t j = 0; j < *map.count; j++) {
 			char *key = map.data + (j * elen);
 			int cmp = memcmp(field, key, flen);
 			if (cmp == 0)
-				return -1; // No dupes (TODO: Undo other maps)
+				return -1;
 			if (cmp < 0) {
-				memmove(map.data + ((j + 1) * elen), map.data + (j * elen),
-				        elen * (*map.count - j));
-				break;
+				indices[i] = j;
+				goto next_field;
 			}
 		}
+		indices[i] = *map.count;
+		next_field:;
+	}
+	for (size_t i = 0; i < db->field_count; i++) {
+		database_map map = db->maps[i];
+		if (map.data == NULL)
+			continue;
+		const char *field = entry + get_offset(db, i);
+		size_t flen = db->field_lengths[i], elen = flen + sizeof(*db->count);
+		size_t j = indices[i];
+		memmove(map.data + ((j + 1) * elen), map.data + (j * elen),
+		        elen * (*map.count - j));
 		memcpy(map.data + (j * elen), field, flen);
 		*((uint32_t *)(map.data + (j * elen) + flen)) = *db->count;
 		(*map.count)++;

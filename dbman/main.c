@@ -57,7 +57,11 @@ int main(int argc, char **argv)
 	database_set_field(&db, buf, DB_FILE_FIELD  , file  );
 	database_set_field(&db, buf, DB_AUTHOR_FIELD, author);
 	database_set_field(&db, buf, DB_DATE_FIELD  , &date );
-	database_add(&db, buf);
+
+	if (database_add(&db, buf) < 0) {
+		fprintf(stderr, "Failed to add another entry (perhaps you were too soon?)\n");
+		return 1;
+	}
 
 	date_to_str(buf, htonl(date));
 	printf("Entry '%s' added @ '%s'\n", title, buf);
