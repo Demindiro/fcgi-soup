@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/dir.h>
 #include <sys/fcntl.h>
 #include <sys/mman.h>
@@ -86,7 +87,7 @@ int date_to_str(char *buf, uint32_t date)
 	uint time   = (date >>  0) & ((1 << 11) - 1);
 	uint hour   = time / 60;
 	uint minute = time % 60;
-	return sprintf(buf, "%u-%u-%u %u:%u", year, month, day, hour, minute);
+	return sprintf(buf, "%02u-%02u-%02u %02u:%02u", year, month, day, hour, minute);
 }
 
 

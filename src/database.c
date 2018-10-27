@@ -57,7 +57,7 @@ int database_create(database *db, const char *file, uint8_t field_count, uint16_
 	
 	db->count = (uint32_t *)map;
 	*db->count = 0;
-	map += sizeof(db->count);
+	map += sizeof(*db->count);
 	
 	*((uint8_t  *)map) = db->field_count  = field_count;
 	map += sizeof(db->field_count);
@@ -89,7 +89,7 @@ int database_load(database *db, const char *file)
 	db->mapptr = map;
 
 	db->count = (uint32_t *)map;
-	map += sizeof(db->count);
+	map += sizeof(*db->count);
 
 	db->field_count = *((uint8_t *)map);
 	map += sizeof(db->field_count);
@@ -199,7 +199,8 @@ int database_add(database *db, const char *entry)
 			if (cmp == 0)
 				return -1; // No dupes (TODO: Undo other maps)
 			if (cmp < 0) {
-				memmove(map.data + (j * elen), map.data + ((j + 1) * elen), flen);
+				memmove(map.data + ((j + 1) * elen), map.data + (j * elen),
+				        elen * (*map.count - j));
 				break;
 			}
 		}
@@ -268,7 +269,7 @@ uint32_t database_get_range(database *db, const char ***entries, uint8_t field, 
 			}
 		}
 		end = *map.count;
-	found_end:;
+	found_end:
 		if (i == 0)
 			return 0;
 		size_t count = end - start;

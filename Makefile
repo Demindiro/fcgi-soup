@@ -1,8 +1,8 @@
 proj_root = $(shell pwd)
-soup_src  = src/*.c
-dbman_src = dbman/main.c src/article.c src/dictionary.c src/template.c src/database.c
+soup_src  = src/*.c src/**/*.c
+dbman_src = dbman/main.c src/article.c src/dictionary.c src/template.c src/database.c src/**/*.c
 
-db  = gdb
+db  = lldb
 mem = valgrind
 
 
@@ -12,12 +12,12 @@ endif
 
 
 build_debug:
-	gcc $(soup_src) -lfcgi -O0 -g -o build/soup
-	gcc $(dbman_src) -O0 -g -o build/dbman
+	gcc $(soup_src) -lfcgi -O0 -g -Wall -o build/soup
+	gcc $(dbman_src) -O0 -g -Wall -o build/dbman
 
 build_release:
-	gcc $(soup_src) -lfcgi -O2 -o build/soup
-	gcc $(dbman_src) -O2 -o build/dbman
+	gcc $(soup_src) -lfcgi -O2 -Wall -o build/soup
+	gcc $(dbman_src) -O2 -Wall -o build/dbman
 
 
 run:
