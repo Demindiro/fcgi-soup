@@ -160,8 +160,8 @@ int main()
 		if (uri[0] == '/')
 			uri++;
 
-		if (strncmp("blog/", uri, 5) == 0) {
-			char *nuri = uri + 5;
+		if (strncmp("blog", uri, 4) == 0 && (uri[4] == '/' || uri[4] == 0)) {
+			char *nuri = uri + (uri[4] == '/' ? 5 : 4);
 			const char *body = article_get(&blog_root, nuri);
 			if (body == NULL) {
 				print_error();
