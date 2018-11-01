@@ -143,6 +143,16 @@ static void unmap_or_free_file(char *ptr, size_t size)
 		free(ptr);
 }
 
+
+static void set_article_dict(dictionary *dict, article *art) {
+	dict_set(&dict, "URI"   , art->uri   );
+	dict_set(&dict, "FILE"  , art->file  );
+	dict_set(&dict, "DATE",   date_to_str(art->date));
+	dict_set(&dict, "TITLE" , art->title );
+	dict_set(&dict, "AUTHOR", art->author);
+}
+
+
 int main()
 {
 	if (setup() < 0)
@@ -162,12 +172,32 @@ int main()
 
 		if (strncmp("blog/", uri, 5) == 0) {
 			char *nuri = uri + 5;
-			const char *body = article_get(&blog_root, nuri);
-			if (body == NULL) {
+			article *arts;
+			size_t count = article_get(&blog_root, &arts, nuri);
+			if (count == -1) {
 				print_error();
 				continue;
 			}
+			char *body = malloc(buf);
+			char datestr[64];
+			dictionary dict;
+			dict_create(&dict);
+			if (count == 1) {
+				set_article_dict(&dict, &arts[0]);
+				body = template_parse(&article_template, dict);
+			} else {
+				for (size_t i = 0; i < count; i++) {
+					set_article_dict(&dict, &arts[i]);
+					char *buf = template_parse(&article_entry_template, dict);
+					if (count == 1) {
+						body = buf;
+						break;
+					}
+				}
+			}
+			dict_free(&dict);
 			dict_set(&container_dict, "BODY", body);
+			free(arts[0]);
 		} else {
 			struct stat statbuf;
 			if (uri[0] == 0)

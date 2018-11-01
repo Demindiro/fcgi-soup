@@ -28,41 +28,9 @@
 #include "../include/template.h"
 
 
-#define DEF_TEMP_BODY "<h1>{TITLE}</h1><article>{BODY}</article>"
-
 
 typedef unsigned int uint;
 
-
-static template temp;
-
-
-__attribute__((constructor))
-static void init()
-{
-	char *body = NULL;
-	int fd = open("article.phtml", O_RDONLY);
-	if (fd < 0) {
-		template_create(&temp, DEF_TEMP_BODY);
-	} else {
-		struct stat statbuf;
-		if (fstat(fd, &statbuf) < 0) {
-			close(fd);
-			template_create(&temp, DEF_TEMP_BODY);
-		} else {
-			body = malloc(statbuf.st_size + 1);
-			if (body == NULL || read(fd, body, statbuf.st_size) != statbuf.st_size) {
-				close(fd);
-				free(body);
-				template_create(&temp, DEF_TEMP_BODY);
-				return;
-			}
-			close(fd);
-			body[statbuf.st_size] = 0;
-			template_create(&temp, body);
-		}
-	}
-}
 
 
 uint32_t format_date(uint year, uint month, uint day, uint hour, uint minute)
@@ -105,32 +73,20 @@ static int to_uint(const char **pptr, uint *res)
 }
 
 
-static char *article_get_between_times(article_root *root, uint32_t t0, uint32_t t1)
+static int article_get_between_times(article_root *root, article **dest, uint32_t t0, uint32_t t1)
 {
-	size_t size = 65536, len = 0;
-	char *buf = malloc(size);
 	const char **entries;
-	size_t count = database_get_range(&root->db, &entries, DB_DATE_FIELD, &t0, &t1);
+	size_t count = database_get_range(&root->db, &entries, ARTICLE_DATE_FIELD, &t0, &t1);
+	article *arts = *dest = calloc(count, sizeof(article));
 	for (size_t i = 0; i < count; i++) {
-		char name[DB_FILE_LEN + 1], title[DB_TITLE_LEN + 1];
-		database_get_field(&root->db, name, entries[i], DB_FILE_FIELD);
-		database_get_field(&root->db, name, entries[i], DB_TITLE_FIELD);
-		name [DB_FILE_LEN ] = 0;
-		title[DB_TITLE_LEN] = 0;
-		char link[512];
-		ssize_t l = sprintf(link, "<a href=\"%s\">%s</a><br>", name, title);
-		if (l < 0 || buf_write(&buf, &len, &size, link, l) < 0) {
-			free(buf);
-			return NULL;
-		}
+		database_get_field(&root->db, arts[i].uri   , entries[i], ARTICLE_URI_FIELD   );
+		database_get_field(&root->db, arts[i].file  , entries[i], ARTICLE_FILE_FIELD  );
+		database_get_field(&root->db, (char *)&arts[i].date  , entries[i], ARTICLE_DATE_FIELD  );
+		database_get_field(&root->db, arts[i].author, entries[i], ARTICLE_AUTHOR_FIELD);
+		database_get_field(&root->db, arts[i].title , entries[i], ARTICLE_TITLE_FIELD );
 	}
 	free(entries);
-	if (buf_write(&buf, &len, &size, "", 1) < 0) {
-		free(buf);
-		return NULL;
-	}
-	buf = realloc(buf, len);
-	return buf;
+	return count;
 }
 
 
@@ -156,24 +112,24 @@ int article_init(article_root *root, const char *path)
 	if (database_load(&root->db, buf) < 0) {
 		uint8_t f_count = 5;
 		uint16_t f_lens[5] = {
-			[DB_URI_FIELD   ] = DB_URI_LEN   ,
-			[DB_FILE_FIELD  ] = DB_FILE_LEN  ,
-			[DB_DATE_FIELD  ] = DB_DATE_LEN  ,
-			[DB_AUTHOR_FIELD] = DB_AUTHOR_LEN,
-			[DB_TITLE_FIELD ] = DB_TITLE_LEN ,
+			[ARTICLE_URI_FIELD   ] = ARTICLE_URI_LEN   ,
+			[ARTICLE_FILE_FIELD  ] = ARTICLE_FILE_LEN  ,
+			[ARTICLE_DATE_FIELD  ] = ARTICLE_DATE_LEN  ,
+			[ARTICLE_AUTHOR_FIELD] = ARTICLE_AUTHOR_LEN,
+			[ARTICLE_TITLE_FIELD ] = ARTICLE_TITLE_LEN ,
 		}; 
 		if (database_create(&root->db, buf, f_count, f_lens) < 0) {
 			free(root->dir);
 			return -1;
 		}
-		database_create_map(&root->db, DB_URI_FIELD);
-		database_create_map(&root->db, DB_DATE_FIELD);
+		database_create_map(&root->db, ARTICLE_URI_FIELD);
+		database_create_map(&root->db, ARTICLE_DATE_FIELD);
 	}
 	return 0;
 }
 
 
-const char *article_get(article_root *root, const char *uri) {
+int article_get(article_root *root, article **dest, const char *uri) {
 	const char *ptr = uri;
 	if ('0' <= *ptr && *ptr <= '9') {
 		uint year, month, day;
@@ -181,7 +137,7 @@ const char *article_get(article_root *root, const char *uri) {
 		if (to_uint(&ptr, &year ) < 0 || !(ptr++) || // !x if x != 0 --> 0
 		    to_uint(&ptr, &month) < 0 || !(ptr++) ||
 		    to_uint(&ptr, &day  ) < 0)
-			return NULL;
+			return -1;
 		if (year == 0) {
 			time0 = 0;
 			time1 = 0xFFffFFff;
@@ -195,59 +151,37 @@ const char *article_get(article_root *root, const char *uri) {
 			time0 = format_date(year, month, day,  0,  0);
 			time1 = format_date(year, month, day, 23, 59);
 		}
-		return article_get_between_times(root, time0, time1);
+		return article_get_between_times(root, dest, time0, time1);
 	} else if (*ptr == 0) {
-		return article_get_between_times(root, 0, 0xFFffFFff);	
+		return article_get_between_times(root, dest, 0, 0xFFffFFff);	
 	} else {
-		char dburi[DB_FILE_LEN];
+		article *art = *dest = calloc(1, sizeof(article));
+
+		char dburi[ARTICLE_FILE_LEN];
 		memset(dburi, 0, sizeof(dburi));
 		strncpy(dburi, uri, sizeof(dburi));
 		char entry[root->db.entry_length];
-		if (database_get(&root->db, entry, DB_URI_FIELD, dburi) < 0)
-			return NULL;
+		if (database_get(&root->db, entry, ARTICLE_URI_FIELD, dburi) < 0)
+			goto error;
 		
-		char file[512], *ptr = file;
+		char *ptr = art->file;
 		size_t l = strlen(root->dir);
 		memcpy(ptr, root->dir, l);
 		ptr += l;
-		if (database_get_field(&root->db, ptr, entry, DB_FILE_FIELD) < 0)
-			return NULL;
+		if (database_get_field(&root->db, ptr, entry, ARTICLE_FILE_FIELD) < 0)
+			goto error;
 		ptr[strlen(ptr)] = 0;
-
-		int fd = open(file, O_RDONLY);
-		if (fd < 0)
-			return NULL;
-		struct stat statbuf;
-		if (fstat(fd, &statbuf) < 0) {
-			close(fd);
-			return NULL;
-		}
-		char *buf = malloc(statbuf.st_size + 1);
-		if (read(fd, buf, statbuf.st_size) != statbuf.st_size) {
-			close(fd);
-			free(buf);
-			return NULL;
-		}
-		close(fd);
-		buf[statbuf.st_size] = 0;
-		
+	
 		uint32_t date;
-		char title[DB_TITLE_LEN], author[DB_AUTHOR_LEN], datestr[64];
-		if (database_get_field(&root->db, (char *)&date, entry, DB_DATE_FIELD  ) < 0 ||
-		    database_get_field(&root->db,  title , entry, DB_TITLE_FIELD ) < 0 ||
-		    database_get_field(&root->db,  author, entry, DB_AUTHOR_FIELD) < 0 ||
-		    date_to_str(datestr, date) < 0)
-			/* TODO */;
-		dictionary dict;
-		dict_create(&dict);
-		dict_set(&dict, "BODY"  , buf    );
-		dict_set(&dict, "TITLE" , title  );
-		dict_set(&dict, "AUTHOR", author );
-		dict_set(&dict, "DATE"  , datestr);
-		char *body = template_parse(&temp, &dict);
-		dict_free(&dict);
-		free(buf);
-		return body;
+		if (database_get_field(&root->db, (char *)&art->date, entry, ARTICLE_DATE_FIELD  ) < 0 ||
+		    database_get_field(&root->db,  art->title , entry, ARTICLE_TITLE_FIELD ) < 0 ||
+		    database_get_field(&root->db,  art->author, entry, ARTICLE_AUTHOR_FIELD) < 0);
+		
+		return 1;
+	error:
+		free(art);
+		return -1;
 	}
-	return NULL;
 }
+
+int article_get_comments(article_root *root, article_comment **dest, article *art);

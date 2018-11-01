@@ -7,7 +7,7 @@
 
 int main(int argc, char **argv)
 {
-	char uri[DB_URI_LEN+1], file[DB_FILE_LEN+1], author[DB_AUTHOR_LEN+1], title[DB_TITLE_LEN+1];
+	char uri[ARTICLE_URI_LEN+1], file[ARTICLE_FILE_LEN+1], author[ARTICLE_AUTHOR_LEN+1], title[ARTICLE_TITLE_LEN+1];
 	memset(uri   , 0, sizeof(uri   ));
 	memset(file  , 0, sizeof(file  ));
 	memset(author, 0, sizeof(author));
@@ -50,11 +50,11 @@ int main(int argc, char **argv)
 	date = format_date(t->tm_year+1900, t->tm_mon+1, t->tm_mday, t->tm_hour, t->tm_min);
 
 	char buf[db.entry_length];
-	database_set_field(&db, buf, DB_TITLE_FIELD , title );
-	database_set_field(&db, buf, DB_URI_FIELD   , uri   );
-	database_set_field(&db, buf, DB_FILE_FIELD  , file  );
-	database_set_field(&db, buf, DB_AUTHOR_FIELD, author);
-	database_set_field(&db, buf, DB_DATE_FIELD  , &date );
+	database_set_field(&db, buf, ARTICLE_TITLE_FIELD , title );
+	database_set_field(&db, buf, ARTICLE_URI_FIELD   , uri   );
+	database_set_field(&db, buf, ARTICLE_FILE_FIELD  , file  );
+	database_set_field(&db, buf, ARTICLE_AUTHOR_FIELD, author);
+	database_set_field(&db, buf, ARTICLE_DATE_FIELD  , &date );
 	database_add(&db, buf);
 
 	date_to_str(buf, date);
