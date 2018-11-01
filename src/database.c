@@ -16,26 +16,12 @@
 #define MMAP_SIZE (1U << 30)
 
 
-
 static size_t get_offset(database *db, uint8_t field)
 {
 	size_t offset = 0;
 	for (size_t i = 0; i < field; i++)
 		offset += db->field_lengths[i];
 	return offset;
-}
-
-
-static char *get_entry_ptr(database *db, uint8_t keyfield, const char *key)
-{
-	size_t f_offset = get_offset(db, keyfield);
-	for (size_t i = 0; i < *db->count; i++) {
-		char *entry = db->data + (i * db->entry_length);
-		if (memcmp(entry + f_offset, key, db->field_lengths[i]) == 0)
-			return entry;
-	}
-	errno = ENOENT;
-	return NULL;
 }
 
 
@@ -54,7 +40,6 @@ static int get_map_name(database *db, uint8_t field, char *buf, size_t size)
 }
 
 
-
 int database_create(database *db, const char *file, uint8_t field_count, uint16_t *field_lengths)
 {
 	int fd = open(file, O_RDWR | O_CREAT, 0644);
@@ -66,12 +51,13 @@ int database_create(database *db, const char *file, uint8_t field_count, uint16_
 		return -1;
 	}
 	char *map = db->mapptr = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	close(fd);
 	if (db->mapptr == NULL)
 		return -1;
 	
 	db->count = (uint32_t *)map;
 	*db->count = 0;
-	map += sizeof(db->count);
+	map += sizeof(*db->count);
 	
 	*((uint8_t  *)map) = db->field_count  = field_count;
 	map += sizeof(db->field_count);
@@ -84,14 +70,8 @@ int database_create(database *db, const char *file, uint8_t field_count, uint16_
 	
 	strcpy(db->name, file);
 	
-	memset(db->maps, 0, sizeof(db->maps));
-	for (size_t i = 0; i < field_count; i++) {
-
-	}
-
 	db->data = map;
 	msync(db->mapptr, map - (char *)db->mapptr, MS_ASYNC);
-	close(fd);
 	return 0;
 }
 
@@ -102,13 +82,14 @@ int database_load(database *db, const char *file)
 	if (fd < 0)
 		return -1;
 	char *map = mmap(NULL, MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	close(fd);
 	if (map == NULL)
 		return -1;
 
 	db->mapptr = map;
 
 	db->count = (uint32_t *)map;
-	map += sizeof(db->count);
+	map += sizeof(*db->count);
 
 	db->field_count = *((uint8_t *)map);
 	map += sizeof(db->field_count);
@@ -178,38 +159,65 @@ int database_create_map(database *db, uint8_t field)
 }
 
 
-int database_get(database *db, char *buf, uint8_t keyfield, const char *key)
+const char *database_get(database *db, uint8_t keyfield, const char *key)
 {
-	const char *entry = get_entry_ptr(db, keyfield, key);
+	size_t f_offset = get_offset(db, keyfield);
+	for (size_t i = 0; i < *db->count; i++) {
+		char *entry = db->data + (i * db->entry_length);
+		if (memcmp(entry + f_offset, key, db->field_lengths[keyfield]) == 0)
+			return entry;
+	}
+	errno = ENOENT;
+	return NULL;
+}
+
+
+const char *database_get_offset(database *db, uint8_t keyfield, const char *key, ssize_t offset)
+{
+	const char *entry = database_get(db, keyfield, key);
 	if (entry == NULL)
-		return -1;
-	memcpy(buf, entry, db->entry_length);
-	return 0;
+		return NULL;
+	entry += (ssize_t)db->entry_length * offset;
+	if (entry < db->data || entry > db->data + ((db->entry_length - 1) * *db->count))
+		return NULL;
+	return entry;
 }
 
 
 int database_add(database *db, const char *entry)
 {
+	size_t indices[db->field_count];
+	// Verify first that there are no duplicate fields in the mappings
 	for (size_t i = 0; i < db->field_count; i++) {
 		database_map map = db->maps[i];
 		if (map.data == NULL)
 			continue;
-		size_t j;
 		size_t flen = db->field_lengths[i], elen = flen + sizeof(*db->count);
 		const char *field = entry + get_offset(db, i);
-		char *rdata = map.data + sizeof(*db->count);
-		for (j = 0; j < *map.count; j++) {
+		for (size_t j = 0; j < *map.count; j++) {
 			char *key = map.data + (j * elen);
 			int cmp = memcmp(field, key, flen);
 			if (cmp == 0)
-				return -1; // No dupes (TODO: Undo other maps)
+				return -1;
 			if (cmp < 0) {
-				memmove(rdata + (j * elen), rdata + ((j + 1) * elen), flen);
-				break;
+				indices[i] = j;
+				goto next_field;
 			}
 		}
-		memcpy(rdata + (j * elen), field, flen);
-		*((uint32_t *)(rdata + (j * elen) + flen)) = *db->count;
+		indices[i] = *map.count;
+		next_field:;
+	}
+	for (size_t i = 0; i < db->field_count; i++) {
+		database_map map = db->maps[i];
+		if (map.data == NULL)
+			continue;
+		const char *field = entry + get_offset(db, i);
+		size_t flen = db->field_lengths[i], elen = flen + sizeof(*db->count);
+		size_t j = indices[i];
+		memmove(map.data + ((j + 1) * elen), map.data + (j * elen),
+		        elen * (*map.count - j));
+		memcpy(map.data + (j * elen), field, flen);
+		*((uint32_t *)(map.data + (j * elen) + flen)) = *db->count;
 		(*map.count)++;
 	}
 	memcpy(db->data + (*db->count * db->entry_length), entry, db->entry_length);
@@ -221,7 +229,7 @@ int database_add(database *db, const char *entry)
 
 int database_del(database *db, uint8_t keyfield, const char *key)
 {
-	char *entry = get_entry_ptr(db, keyfield, key);
+	char *entry = (char *)database_get(db, keyfield, key);
 	if (entry == NULL)
 		return -1;
 	memset(entry, 0, db->entry_length);
@@ -267,17 +275,21 @@ uint32_t database_get_range(database *db, const char ***entries, uint8_t field, 
 	found_start:
 		for ( ; i < *map.count; i++) {
 			char *entry = map.data + (i * elen);
-			if (memcmp(entry, key1, flen) < 0) {
+			if (memcmp(key1, entry, flen) < 0) {
 				end = i - 1;
 				goto found_end;
 			}
 		}
 		end = *map.count;
-	found_end:;
+	found_end:
+		if (i == 0)
+			return 0;
 		size_t count = end - start;
 		*entries = malloc(count * sizeof(char *));
-		for (size_t j = 0, i = start; i < end; i++, j++) {
-			size_t index = *((uint32_t *)map.data + (i * elen) + flen);
+		if (*entries == NULL)
+			return -1;
+		for (size_t j = 0, i = start; j < count; j++, i++) {
+			size_t index = *(uint32_t *)(map.data + (i * elen) + flen);
 			(*entries)[j] = db->data + (index * db->entry_length);
 		}
 		return count;
@@ -288,7 +300,7 @@ uint32_t database_get_range(database *db, const char ***entries, uint8_t field, 
 		for (size_t i = 0; i < *db->count; i++) {
 			char *entry = db->data + (i * db->entry_length);
 			if (memcmp(key0, entry + f_offset, db->entry_length) <= 0 &&
-			    memcmp(key0, entry + f_offset, db->entry_length) <= 0) {
+			    memcmp(key1, entry + f_offset, db->entry_length) >= 0) {
 				if (buf_write(&buf, &len, &size, entry, sizeof(entry))) {
 					free(buf);
 					return -1;

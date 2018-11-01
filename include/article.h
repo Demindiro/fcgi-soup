@@ -21,7 +21,11 @@
 
 typedef unsigned int uint;
 
-
+/*
+ * An article root is a wrapper around a database containing article entries.
+ * Each entry contains the URI, the file path, the date of submission, the
+ * author's name and the title.
+ */
 typedef struct article_root {
 	struct database db;
 	struct database comments;
@@ -43,11 +47,13 @@ typedef struct article {
 	uint32_t date;
 	char author[ARTICLE_AUTHOR_LEN + 1];
 	char title [ARTICLE_TITLE_LEN  + 1];
+	char next  [ARTICLE_URI_LEN    + 1];
+	char prev  [ARTICLE_URI_LEN    + 1];
 } article;
 
 
 /*
- * Load an article database
+ * Loads or creates a new article database for the given path.
  */
 int article_init(article_root *root, const char *path);
 
@@ -62,6 +68,17 @@ int article_get(article_root *root, article **dest, const char *uri);
 int article_get_comments(article_root *root, article_comment **dest, article *art);
 
 /*
+ * Frees memory and stores any changes to the database
+ */
+void article_free(article_root *root);
+
+/*
+ * Looks an article up for the given URI and returns it contents if found,
+ * otherwise it returns NULL.
+ */
+int article_get(article_root *root, article **dest, const char *uri);
+
+/*
  * Parse a date in the following format:
  * - 12 bits for the year
  * -  4 bits for the month
@@ -71,7 +88,7 @@ int article_get_comments(article_root *root, article_comment **dest, article *ar
 uint32_t format_date(uint year, uint month, uint day, uint hour, uint minute);
 
 /*
- * Convert a date to a human-friendly format
+ * Converts a date to a string. The default format is YYYY-MM-DD hh:mm
  */
 int date_to_str(char *buf, uint32_t date);
 

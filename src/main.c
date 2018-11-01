@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include "util/string.h"
 #include "../include/article.h"
 #include "../include/dictionary.h"
 #include "../include/template.h"
@@ -17,6 +18,8 @@ time_t container_mod_time;
 time_t error_mod_time;
 template container_temp;
 template error_temp;
+template article_temp;
+template article_entry_temp;
 dictionary container_dict;
 dictionary error_dict;
 
@@ -145,11 +148,13 @@ static void unmap_or_free_file(char *ptr, size_t size)
 
 
 static void set_article_dict(dictionary *dict, article *art) {
-	dict_set(&dict, "URI"   , art->uri   );
-	dict_set(&dict, "FILE"  , art->file  );
-	dict_set(&dict, "DATE",   date_to_str(art->date));
-	dict_set(&dict, "TITLE" , art->title );
-	dict_set(&dict, "AUTHOR", art->author);
+	char datestr[64];
+	date_to_str(datestr, art->date);
+	dict_set(dict, "URI"   , art->uri   );
+	dict_set(dict, "FILE"  , art->file  );
+	dict_set(dict, "DATE"  , datestr);
+	dict_set(dict, "TITLE" , art->title );
+	dict_set(dict, "AUTHOR", art->author);
 }
 
 
@@ -170,34 +175,38 @@ int main()
 		if (uri[0] == '/')
 			uri++;
 
-		if (strncmp("blog/", uri, 5) == 0) {
-			char *nuri = uri + 5;
+		if (strncmp("blog", uri, 4) == 0 && (uri[4] == '/' || uri[4] == 0)) {
+			char *nuri = uri + (uri[4] == '/' ? 5 : 4);
 			article *arts;
 			size_t count = article_get(&blog_root, &arts, nuri);
 			if (count == -1) {
 				print_error();
 				continue;
 			}
-			char *body = malloc(buf);
-			char datestr[64];
+			char *body;
 			dictionary dict;
 			dict_create(&dict);
 			if (count == 1) {
 				set_article_dict(&dict, &arts[0]);
-				body = template_parse(&article_template, dict);
+				body = template_parse(&article_temp, &dict);
 			} else {
+				size_t size = 0x1000, index = 0;
+				body = malloc(size);
 				for (size_t i = 0; i < count; i++) {
 					set_article_dict(&dict, &arts[i]);
-					char *buf = template_parse(&article_entry_template, dict);
-					if (count == 1) {
-						body = buf;
-						break;
-					}
+					char *buf = template_parse(&article_entry_temp, &dict);
+					if (buf_write(&body, &index, &size, buf, strlen(buf)) < 0)
+						/* TODO */;
+					free(buf);
 				}
+				char nul[1] = { 0 };
+				if (buf_write(&body, &index, &size, nul, 1) < 0)
+					/* TODO */;
 			}
 			dict_free(&dict);
 			dict_set(&container_dict, "BODY", body);
-			free(arts[0]);
+			free(body);
+			free(arts);
 		} else {
 			struct stat statbuf;
 			if (uri[0] == 0)
@@ -221,8 +230,6 @@ int main()
 			const char *mime = get_mime_type(uri);
 			if (mime != NULL)
 				printf("Content-Type: %s\r\n", mime);
-			printf("Status: 200\r\n"
-			       "\r\n");
 			char *body = map_or_read_file(fd, statbuf.st_size);
 			if (body == NULL) {
 				perror("Error during mapping");
@@ -250,7 +257,7 @@ int main()
 			perror("Error during parsing");
 			continue;
 		}
-		if (printf("%s", body) < 0) {
+		if (printf("Status: 200\r\n\r\n%s", body) < 0) {
 			perror("Error during writing");
 			free(body);
 			continue;
@@ -258,5 +265,6 @@ int main()
 		free(body);
 		fflush(stdout);
 	}
+	article_free(&blog_root);
 	return 0;
 }

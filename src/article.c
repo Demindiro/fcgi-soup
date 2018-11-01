@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/dir.h>
 #include <sys/fcntl.h>
 #include <sys/mman.h>
@@ -22,6 +23,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <time.h>
+#include <arpa/inet.h> // htonl()
 #include "util/string.h"
 #include "../include/database.h"
 #include "../include/dictionary.h"
@@ -53,7 +55,7 @@ int date_to_str(char *buf, uint32_t date)
 	uint time   = (date >>  0) & ((1 << 11) - 1);
 	uint hour   = time / 60;
 	uint minute = time % 60;
-	return sprintf(buf, "%u-%u-%u %u:%u", year, month, day, hour, minute);
+	return sprintf(buf, "%02u-%02u-%02u %02u:%02u", year, month, day, hour, minute);
 }
 
 
@@ -66,6 +68,7 @@ static int to_uint(const char **pptr, uint *res)
 			return -1;
 		num *= 10;
 		num += *ptr - '0';
+		ptr++;
 	}
 	*res  = num;
 	*pptr = ptr;
@@ -75,6 +78,8 @@ static int to_uint(const char **pptr, uint *res)
 
 static int article_get_between_times(article_root *root, article **dest, uint32_t t0, uint32_t t1)
 {
+	t0 = htonl(t0);
+	t1 = htonl(t1);
 	const char **entries;
 	size_t count = database_get_range(&root->db, &entries, ARTICLE_DATE_FIELD, &t0, &t1);
 	article *arts = *dest = calloc(count, sizeof(article));
@@ -95,7 +100,7 @@ int article_init(article_root *root, const char *path)
 	size_t l = strlen(path);	
 	
 	int append_slash = path[l-1] != '/';
-	root->dir = malloc(l + append_slash);
+	root->dir = malloc(l + append_slash + 1);
 	if (root->dir == NULL)
 		return -1;
 	memcpy(root->dir, path, l);
@@ -132,16 +137,15 @@ int article_init(article_root *root, const char *path)
 int article_get(article_root *root, article **dest, const char *uri) {
 	const char *ptr = uri;
 	if ('0' <= *ptr && *ptr <= '9') {
-		uint year, month, day;
+		uint year = 0, month = 0, day = 0;
 		uint32_t time0, time1;
-		if (to_uint(&ptr, &year ) < 0 || !(ptr++) || // !x if x != 0 --> 0
-		    to_uint(&ptr, &month) < 0 || !(ptr++) ||
-		    to_uint(&ptr, &day  ) < 0)
+		if (to_uint(&ptr, &year ) < 0)
 			return -1;
-		if (year == 0) {
-			time0 = 0;
-			time1 = 0xFFffFFff;
-		} else if (month == 0) {
+                if (*ptr != 0 && ptr++ && to_uint(&ptr, &month) < 0)
+			return -1;
+		if (*ptr != 0 && ptr++ && to_uint(&ptr, &day  ) < 0)
+			return -1;
+		if (month == 0) {
 			time0 = format_date(year,  0,  0,  0,  0);
 			time1 = format_date(year, 11, 31, 23, 59);
 		} else if (day == 0) {
@@ -160,8 +164,8 @@ int article_get(article_root *root, article **dest, const char *uri) {
 		char dburi[ARTICLE_FILE_LEN];
 		memset(dburi, 0, sizeof(dburi));
 		strncpy(dburi, uri, sizeof(dburi));
-		char entry[root->db.entry_length];
-		if (database_get(&root->db, entry, ARTICLE_URI_FIELD, dburi) < 0)
+		const char *entry = database_get(&root->db, ARTICLE_URI_FIELD, dburi);
+		if (entry == NULL)
 			goto error;
 		
 		char *ptr = art->file;
@@ -172,7 +176,6 @@ int article_get(article_root *root, article **dest, const char *uri) {
 			goto error;
 		ptr[strlen(ptr)] = 0;
 	
-		uint32_t date;
 		if (database_get_field(&root->db, (char *)&art->date, entry, ARTICLE_DATE_FIELD  ) < 0 ||
 		    database_get_field(&root->db,  art->title , entry, ARTICLE_TITLE_FIELD ) < 0 ||
 		    database_get_field(&root->db,  art->author, entry, ARTICLE_AUTHOR_FIELD) < 0);
@@ -184,4 +187,12 @@ int article_get(article_root *root, article **dest, const char *uri) {
 	}
 }
 
+
 int article_get_comments(article_root *root, article_comment **dest, article *art);
+
+
+void article_free(article_root *root)
+{
+	database_free(&root->db);
+	free(root->dir);
+}
