@@ -69,3 +69,12 @@ const void *list_get(list ls, size_t index)
 		return NULL;
 	return ls->_data + (index * ls->size);
 }
+
+void *list_to_array(list ls)
+{
+	void *a = malloc(ls->size * ls->count);
+	if (a == NULL)
+		return NULL;
+	memcpy(a, ls->_data, ls->size * ls->count);
+	return a;
+}

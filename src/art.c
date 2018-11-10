@@ -28,7 +28,7 @@
 #include "util/string.h"
 #include "../include/db.h"
 #include "../include/dict.h"
-#include "../include/template.h"
+#include "../include/temp.h"
 
 
 typedef unsigned int uint;

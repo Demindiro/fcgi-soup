@@ -1,6 +1,6 @@
 proj_root = $(shell pwd)
 soup_src  = src/*.c src/**/*.c
-dbman_src = dbman/main.c src/art.c src/dict.c src/template.c src/db.c src/list.c src/**/*.c
+dbman_src = dbman/main.c src/art.c src/dict.c src/temp.c src/db.c src/list.c src/**/*.c
 
 db  = lldb
 mem = valgrind
