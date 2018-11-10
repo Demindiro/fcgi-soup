@@ -3,7 +3,7 @@
 
 
 #include <stddef.h>
-#include "dictionary.h"
+#include "dict.h"
 
 
 /*
@@ -17,22 +17,22 @@ typedef struct template {
 	size_t  *lengths;
 	char   **args;
 	int     *flags;
-} template;
+} *template;
 
 /*
  * Creates a new template.
  */
-int template_create(template *temp, const char *text);
+template temp_create(const char *text);
 
 /*
  * Frees a template.
  */
-void template_free(template *temp);
+void temp_free(template temp);
 
 /*
  * Parses a template by replacing keys with the corresponding values in the
  * dictionary. If a key does not map to any value, it is substituded by NULL.
  */
-char *template_parse(const template *temp, const dictionary *dict);
+char *temp_render(const template temp, const dict d);
 
 #endif

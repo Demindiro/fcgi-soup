@@ -1,26 +1,41 @@
 #include <errno.h>
 #include <fastcgi.h>
+#ifdef NORMAL_STDIO
+#include <stdio.h>
+#else
 #include <fcgi_stdio.h>
+#endif
 #include <fcntl.h>
 #include <string.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <unistd.h>
-#include "../include/article.h"
-#include "../include/dictionary.h"
-#include "../include/template.h"
+#include "util/string.h"
+#include "util/file.h"
 #include "../include/mime.h"
+#include "../include/art.h"
+#include "../include/dict.h"
+#include "../include/temp.h"
 
 
-time_t container_mod_time;
-time_t error_mod_time;
-template container_temp;
+#define TEMPLATE_DIR "templates/"
+#define MAIN_TEMP    TEMPLATE_DIR "main.html"
+#define ERROR_TEMP   TEMPLATE_DIR "error.html"
+#define ARTICLE_TEMP TEMPLATE_DIR "article.html"
+#define ENTRY_TEMP   TEMPLATE_DIR "article_entry.html"
+#define COMMENT_TEMP TEMPLATE_DIR "comment.html"
+
+
+template main_temp;
 template error_temp;
-dictionary container_dict;
-dictionary error_dict;
+template art_temp;
+template entry_temp;
+template comment_temp;
+art_root blog_root;
 
-article_root blog_root;
+
+#define return_error(ret, msg, ...) { fprintf(stderr, msg, ##__VA_ARGS__); perror(": "); return ret; } ""
 
 
 static int print_error() {
@@ -39,15 +54,17 @@ static int print_error() {
 		status = "500";
 		msg = strerror(errno);
 	}
-	dict_set(&error_dict, "STATUS", status);
-	dict_set(&error_dict, "MESSAGE", msg);
 
-	char *body = template_parse(&error_temp, &error_dict);
+	dict d = dict_create();
+	dict_set(d, "STATUS", status);
+	dict_set(d, "MESSAGE", msg);
+
+	char *body = temp_render(error_temp, d);
 	if (body == NULL)
 		return -1;
-	dict_set(&container_dict, "BODY", body);
+	dict_set(d, "BODY", body);
 	free(body);
-	body = template_parse(&container_temp, &container_dict);
+	body = temp_render(main_temp, d);
 	if (body == NULL)
 		return -1;
 	printf("Content-Type: text/html\r\n"
@@ -57,117 +74,195 @@ static int print_error() {
 	       "%s",
 	       strlen(body), status, body);
 	free(body);
+	dict_free(d);
 	fflush(stdout);
 	return 0;
 }
 
 
-static int check_template(char *file, time_t *time, template *temp, const char *def_temp)
+static template load_temp(char *file)
 {
+	int fd = open(file, O_RDONLY);
+	if (fd < 0)
+		return_error(NULL, "Couldn't open '%s'", file);
 	struct stat statbuf;
-	if (stat(file, &statbuf) >= 0 && !S_ISDIR(statbuf.st_mode)) {	
-		if (*time != statbuf.st_mtime) {
-			template_free(temp);
-			int fd = open(file, O_RDONLY);
-			if (fd < 0) {
-				perror("Couldn't open file");
-				return -1;
-			}
-			char buf[statbuf.st_size + 1];
-			if (read(fd, buf, statbuf.st_size) < 0) {
-				perror("Couldn't read file");
-				return -1;
-			}
-			buf[statbuf.st_size] = 0;
-			if (template_create(temp, buf) < 0) {
-				perror("Couldn't create template of file");
-				return -1;
-			}
-			*time = statbuf.st_mtime;
-		}
-	} else {
-		if (*time != 0) {
-			template_free(temp);
-			if (template_create(temp, def_temp) < 0) {
-				perror("Couldn't create base template");
-				return -1;
-			}
-			*time = 0;
-		}
-	}
-	return 0;
-}
-
-
-static int check_templates()
-{
-	if (check_template("error.phtml"    ,     &error_mod_time,     &error_temp, "<h1>{STATUS}: {MESSAGE}</h1>"      ) < 0 || 
-	    check_template("container.phtml", &container_mod_time, &container_temp, "<!DOCTYPE html><body>{BODY}</body>") < 0)
-		return -1;
-	return 0;
+	if (fstat(fd, &statbuf) < 0)
+		return_error(NULL, "Couldn't get size of '%s'", file);
+	char buf[statbuf.st_size + 1];
+	if (read(fd, buf, statbuf.st_size) < 0)
+		return_error(NULL, "Couldn't read '%s'", file);
+	buf[statbuf.st_size] = 0;
+	template temp = temp_create(buf);
+	if (temp == NULL)
+		return_error(NULL, "Couldn't create temp of '%s'", file);
+	return temp;
 }
 
 
 static int setup()
 {
-	if (dict_create(&error_dict    ) < 0 ||
-	    dict_create(&container_dict) < 0) {
-		perror("Couldn't create dictionaries");
+	   main_temp = load_temp(   MAIN_TEMP);
+	  error_temp = load_temp(  ERROR_TEMP);
+	    art_temp = load_temp(ARTICLE_TEMP);
+	comment_temp = load_temp(COMMENT_TEMP);
+	  entry_temp = load_temp(  ENTRY_TEMP);
+	if (   main_temp == NULL ||
+	      error_temp == NULL ||
+	        art_temp == NULL ||
+            comment_temp == NULL ||
+	      entry_temp == NULL)
 		return -1;
-	}
-	if (check_templates() < 0)
-		return -1;
-	return article_init(&blog_root, "blog");
+	return art_init(&blog_root, "blog");
 }
 
 
-static char *map_or_read_file(int fd, size_t size)
-{
-	char *buf;
-	if (size % getpagesize() > 0) {
-		buf = mmap(NULL, size, PROT_READ | PROT_WRITE , MAP_PRIVATE, fd, 0);
-	} else {
-		buf = malloc(size + 1);
-		read(fd, buf, size);
+static int set_art_dict(dict d, article *art, int flags) {
+	if (flags & 0x1) {
+		struct stat statbuf;
+		int fd = open(art->file, O_RDONLY);
+		if (fd < 0)
+			return -1;
+		fstat(fd, &statbuf);
+		char *buf = malloc(statbuf.st_size + 1);
+		if (buf == NULL) {
+			close(fd);
+			return -1;
+		}
+		read(fd, buf, statbuf.st_size);
+		buf[statbuf.st_size] = 0;
+		dict_set(d, "BODY", buf);
+		free(buf);
 	}
-	buf[size] = 0;
-	close(fd);
+
+	char datestr[64];
+	date_to_str(datestr, art->date);
+
+	dict_set(d, "URI"   , art->uri   );
+	dict_set(d, "DATE"  , datestr    );
+	dict_set(d, "TITLE" , art->title );
+	dict_set(d, "AUTHOR", art->author);
+
+	return 0;
+}
+
+static char *render_comment(art_comment *comment)
+{
+	char buf[64];
+	date_to_str(buf, comment->date);
+	dict d = dict_create();
+	dict_set(d, "AUTHOR", comment->author);
+	dict_set(d, "DATE"  , buf);
+	dict_set(d, "BODY"  , comment->body);
+	if (comment->replies->count > 0) {
+		size_t size = 256, index = 0;
+		char *buf = malloc(size);
+		for (size_t i = 0; i < comment->replies->count; i++) {
+			char *b = render_comment((art_comment *)list_get(comment->replies, i));
+			buf_write(&buf, &index, &size, b, strlen(b));
+			free(b);
+		}
+		dict_set(d, "REPLIES", buf);
+		free(buf);
+	}
+	char *body = temp_render(comment_temp, d);
+	dict_free(d);
+	return body;
+}
+
+
+static char *get_comments(art_root *root, const char *uri)
+{
+	list ls = art_get_comments(root, uri);
+	if (ls == NULL)
+		return NULL;
+	size_t size = 256, index = 0;
+	char *buf = malloc(size);
+	for (size_t i = 0; i < ls->count; i++) {
+		char *b = render_comment((art_comment *)list_get(ls, i));
+		buf_write(&buf, &index, &size, b, strlen(b));
+		free(b);
+	}
+	art_free_comments(ls);
 	return buf;
 }
 
-static void unmap_or_free_file(char *ptr, size_t size)
-{
-	if (size % getpagesize() > 0)
-		munmap(ptr, size);
-	else
-		free(ptr);
-}
 
 int main()
 {
 	if (setup() < 0)
 		return 1;
+
 	char buf[0x10000];
 	while (FCGI_Accept() >= 0) {	
-		check_templates();
-
 		// Do not remove this header
 		printf("X-My-Own-Header: All hail the mighty Duck God\r\n");
 		
-		char *uri = getenv("REQUEST_URI");
+		char *uri = getenv("PATH_INFO");
 		if (uri == NULL)
 			return 1;
 		if (uri[0] == '/')
 			uri++;
 
+		dict md = dict_create();
+
 		if (strncmp("blog", uri, 4) == 0 && (uri[4] == '/' || uri[4] == 0)) {
 			char *nuri = uri + (uri[4] == '/' ? 5 : 4);
-			const char *body = article_get(&blog_root, nuri);
-			if (body == NULL) {
+			article *arts;
+			size_t count = art_get(&blog_root, &arts, nuri);
+			if (count == -1) {
 				print_error();
 				continue;
 			}
-			dict_set(&container_dict, "BODY", body);
+			char *body;
+			dict d = dict_create();
+			if (count == 1) {
+				if (set_art_dict(d, &arts[0], 0x1) < 0) {
+					print_error();
+					continue;
+				}
+				article *art;
+				if (arts[0].prev[0] != 0) {
+					art_get(&blog_root, &art, arts[0].prev);
+					dict_set(d, "PREV_URI"  , art->uri  );
+					dict_set(d, "PREV_TITLE", art->title);
+					free(art);
+				}
+				if (arts[0].next[0] != 0) {
+					art_get(&blog_root, &art, arts[0].next);
+					dict_set(d, "NEXT_URI"  , art->uri  );
+					dict_set(d, "NEXT_TITLE", art->title);
+					free(art);
+				}
+				char *b = get_comments(&blog_root, nuri);
+				dict_set(d, "COMMENTS", b);
+				free(b);
+				body = temp_render(art_temp, d);
+			} else {
+				size_t size = 0x1000, index = 0;
+				body = malloc(size);
+				for (size_t i = 0; i < count; i++) {
+					if (set_art_dict(d, &arts[i], 0) < 0) {
+						print_error();
+						goto error;
+					}
+					char *buf = temp_render(entry_temp, d);
+					if (buf == NULL) {
+						print_error();
+						dict_free(d);
+						goto error;
+					}
+					if (buf_write(&body, &index, &size, buf, strlen(buf)) < 0)
+						/* TODO */;
+					free(buf);
+				}
+				char nul[1] = { 0 };
+				if (buf_write(&body, &index, &size, nul, 1) < 0)
+					/* TODO */;
+			}
+			dict_free(d);			
+			free(arts);
+			dict_set(md, "BODY", body);
+			free(body);
 		} else {
 			struct stat statbuf;
 			if (uri[0] == 0)
@@ -191,29 +286,29 @@ int main()
 			const char *mime = get_mime_type(uri);
 			if (mime != NULL)
 				printf("Content-Type: %s\r\n", mime);
-			char *body = map_or_read_file(fd, statbuf.st_size);
+			char *body = file_read(fd, statbuf.st_size);
 			if (body == NULL) {
-				perror("Error during mapping");
+				perror("Error during reading");
 				continue;
 			}
 			if (mime != NULL && strcmp(mime, "text/html") == 0) {
-				if (dict_set(&container_dict, "BODY", body)) {
+				if (dict_set(md, "BODY", body)) {
 					perror("Error during setting BODY");
-					unmap_or_free_file(body, statbuf.st_size);
+					free(body);
 					continue;
 				}
-				unmap_or_free_file(body, statbuf.st_size);
+				free(body);
 			} else {			
 				if (printf("%*s", statbuf.st_size, body) < 0) {
 					perror("Error during writing");
-					unmap_or_free_file(body, statbuf.st_size);
+					free(body);
 					continue;
 				}
-				unmap_or_free_file(body, statbuf.st_size);
+				free(body);
 				continue;
 			}
 		}
-		char *body = template_parse(&container_temp, &container_dict);
+		char *body = temp_render(main_temp, md);
 		if (body == NULL) {
 			perror("Error during parsing");
 			continue;
@@ -223,9 +318,17 @@ int main()
 			free(body);
 			continue;
 		}
+	error:
 		free(body);
+		dict_free(md);
 		fflush(stdout);
 	}
-	article_free(&blog_root);
+	art_free(&blog_root);
+	// Goddamnit Valgrind
+	temp_free(   main_temp);
+	temp_free(  error_temp);
+	temp_free(    art_temp);
+	temp_free(  entry_temp);
+	temp_free(comment_temp);
 	return 0;
 }

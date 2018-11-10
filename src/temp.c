@@ -1,8 +1,9 @@
-#include "../include/template.h"
+#include "../include/temp.h"
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
-#include "../include/dictionary.h"
+#include "../include/dict.h"
+#include "../include/list.h"
 #include "util/string.h"
 
 
@@ -14,59 +15,38 @@
 #define TEMPLATE_COND_ENDIF 0x20
 
 
-static size_t grow(void *ptr, size_t len, size_t size) {
-	void **buf = (void **)ptr;
-	size_t nl = len * 3 / 2;
-	void *tmp = realloc(*buf, nl * size);
-	if (tmp == NULL)
-		return -1;
-	*buf = tmp;
-	return nl;
-}
-
-
-static int check_bufs(template *temp, size_t *size) {
-	if (temp->count >= *size) {
-		if (grow(&temp->parts, *size, sizeof(*temp->parts)) == -1 ||
-		    grow(&temp->args , *size, sizeof(*temp->args )) == -1 ||
-		    grow(&temp->flags, *size, sizeof(*temp->flags)) == -1)
-			return -1;
-		size_t s = grow(&temp->lengths, *size, sizeof(*temp->lengths));
-		if (s == -1)
-			return -1;
-		*size = s;
-	}
-	return 0;
-}
-
-
-static int copy_part(template *temp, const char *ptr, const char *orgptr, size_t *size) {
-	if (check_bufs(temp, size) < 0)
-		return -1;
+static int copy_part(list parts, list lens, const char *ptr, const char *orgptr) {
 	size_t l = ptr - orgptr;
-	temp->parts[temp->count] = malloc(l);
-	memcpy(temp->parts[temp->count], orgptr, l);
-	temp->lengths[temp->count] = l;
+	char *p = malloc(l);
+	memcpy(p, orgptr, l);
+	list_add(parts, &p);
+	list_add(lens , &l);
 	return 0;
 }
 
 
-int template_create(template *temp, const char *text)
+template temp_create(const char *text)
 {
-	size_t size   = 0x10;
-	temp->parts   = malloc(size * sizeof(*temp->parts  ));
-	temp->lengths = malloc(size * sizeof(*temp->lengths));
-	temp->args    = malloc(size * sizeof(*temp->args   ));
-	temp->flags   = malloc(size * sizeof(*temp->flags  ));
-	temp->count   = 0;
-
 	const char *ptr = text, *orgptr = ptr;
+	template temp;
+
+	list parts   = list_create(sizeof(*temp->parts  ));
+	list lengths = list_create(sizeof(*temp->lengths));
+	list args    = list_create(sizeof(*temp->args   ));
+	list flags   = list_create(sizeof(*temp->flags  ));
+
 	while (1) {
 		while (*ptr != '{') {
 			if (*ptr == 0) {
-				if (copy_part(temp, ptr, orgptr, &size) < 0)
+				if (copy_part(parts, lengths, ptr, orgptr) < 0)
 					goto error;
-				return 0;
+				temp = malloc(sizeof(*temp));
+				temp->parts   = list_to_array(parts  );
+				temp->lengths = list_to_array(lengths);
+				temp->args    = list_to_array(args   );
+				temp->flags   = list_to_array(flags  );
+				temp->count   = args->count;
+				goto success;
 			}
 			ptr++;
 		}
@@ -74,7 +54,7 @@ int template_create(template *temp, const char *text)
 
 		char c = *ptr;
 		if (c == '{' || c == '%') {
-			if (copy_part(temp, ptr - 1, orgptr, &size) < 0)
+			if (copy_part(parts, lengths, ptr - 1, orgptr) < 0)
 				goto error;
 			ptr++;
 
@@ -84,21 +64,23 @@ int template_create(template *temp, const char *text)
 				goto error;
 			orgptr = ptr;
 
+			int f;
+			char *arg = NULL;
+
 			if (c == '{') {
-				temp->flags[temp->count] = TEMPLATE_SUBST;
+				f = TEMPLATE_SUBST;
 				c = '}';
 			} else {
-				temp->flags[temp->count] = TEMPLATE_COND;
+				f = TEMPLATE_COND;
 				while (*ptr != ' ' && *ptr != '\t')
 					ptr++;
 				size_t len = ptr - orgptr;
-				if (len == 5 && strncmp(orgptr, "ifdef", 5) == 0) {
-					temp->flags[temp->count] |= TEMPLATE_COND_IFDEF;
-				} else if (len == 5 && strncmp(orgptr, "endif", 5) == 0) {
-					temp->flags[temp->count] |= TEMPLATE_COND_ENDIF;
-				} else {
+				if (len == 5 && strncmp(orgptr, "ifdef", 5) == 0)
+					f |= TEMPLATE_COND_IFDEF;
+				else if (len == 5 && strncmp(orgptr, "endif", 5) == 0)
+					f |= TEMPLATE_COND_ENDIF;
+				else
 					goto error;
-				}
 				while (*ptr == ' ' || *ptr == '\t')
 					ptr++;
 				orgptr = ptr;
@@ -109,7 +91,7 @@ int template_create(template *temp, const char *text)
 			const char *endptr = ptr + 1;
 			if (*endptr != '}')
 				goto error;
-			if (temp->flags[temp->count] & TEMPLATE_COND_ENDIF)
+			if (f & TEMPLATE_COND_ENDIF)
 				goto no_arg;
 			ptr--;
 			while (*ptr == ' ')
@@ -117,35 +99,44 @@ int template_create(template *temp, const char *text)
 			ptr++;
 
 			size_t l = ptr - orgptr;
-			temp->args[temp->count] = malloc(l + 1);
-			memcpy(temp->args[temp->count], orgptr, l);
-			temp->args[temp->count][l] = 0;
-
-		no_arg:
+			arg = malloc(l + 1);
+			memcpy(arg, orgptr, l);
+			arg[l] = 0;
+no_arg:
 			orgptr = ptr = endptr + 1;
-			temp->count++;
+			list_add(flags, &f  );
+			list_add(args , &arg);
 		}
 	}
 
 error:
-	template_free(temp);
-	return -1;
+	temp = NULL;
+success:
+	list_free(parts  );
+	list_free(lengths);
+	list_free(args   );
+	list_free(flags  );
+	return temp;
 }
 
 
-void template_free(template *temp)
+void temp_free(template temp)
 {
-	for (size_t i = 0; i < temp->count; i++) {
+	size_t i;
+	for (i = 0; i < temp->count; i++) {
 		free(temp->parts[i]);
 		free(temp->args [i]);
 	}
+	free(temp->parts[i]);
 	free(temp->parts  );
 	free(temp->lengths);
 	free(temp->args   );
+	free(temp->flags  );
+	free(temp);
 }
 
 
-char *template_parse(const template *temp, const dictionary *dict)
+char *temp_render(const template temp, const dict d)
 {
 	if (temp->parts == NULL)
 		return NULL;
@@ -160,14 +151,14 @@ char *template_parse(const template *temp, const dictionary *dict)
 
 	for (size_t i = 0; i < temp->count; i++) {	
 		if (temp->flags[i] & TEMPLATE_SUBST) {
-			const char *str = dict_get(dict, temp->args[i]);
+			const char *str = dict_get(d, temp->args[i]);
 			if (str == NULL)
 				str = "NULL";
 			if (buf_write(&buf, &offset, &bufl, str, strlen(str)) < 0)
 				goto error;
 		} else if (temp->flags[i] & TEMPLATE_COND) {
 			if (temp->flags[i] & TEMPLATE_COND_IFDEF) {
-				if (dict_get(dict, temp->args[i]) == NULL) {
+				if (dict_get(d, temp->args[i]) == NULL) {
 					int c = 0;
 					while (c >= 0) {
 						i++;
