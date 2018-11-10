@@ -63,7 +63,7 @@ int list_set(list ls, size_t index, void *item)
 }
 
 
-const void *list_get(list ls, size_t index)
+void *list_get(list ls, size_t index)
 {
 	if (ls->count <= index)
 		return NULL;

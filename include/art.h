@@ -37,7 +37,7 @@ typedef unsigned int uint;
 typedef struct art_root {
 	struct database db;
 	char *dir;
-} art_root;
+} *art_root;
 
 
 typedef struct art_comment {
@@ -47,7 +47,7 @@ typedef struct art_comment {
 	uint32_t reply_to;
 	uint32_t date;
 	char   author[ART_AUTHOR_LEN + 1];
-} art_comment;
+} *art_comment;
 
 
 typedef struct article {
@@ -58,23 +58,18 @@ typedef struct article {
 	char title [ART_TITLE_LEN  + 1];
 	char next  [ART_URI_LEN    + 1];
 	char prev  [ART_URI_LEN    + 1];
-} article;
+} *article;
 
 
 /*
  * Loads or creates a new article database for the given path.
  */
-int art_init(art_root *root, const char *path);
-
-/*
- * Get one or more articles from a database
- */
-int art_get(art_root *root, article **dest, const char *uri);
+art_root art_init(const char *path);
 
 /*
  * Get the comments by an article
  */
-list art_get_comments(art_root *root, const char *uri);
+list art_get_comments(art_root root, const char *uri);
 
 /*
  *
@@ -84,13 +79,13 @@ void art_free_comments(list ls);
 /*
  * Frees memory and stores any changes to the database
  */
-void art_free(art_root *root);
+void art_free(art_root root);
 
 /*
  * Looks an article up for the given URI and returns it contents if found,
  * otherwise it returns NULL.
  */
-int art_get(art_root *root, article **dest, const char *uri);
+article *art_get(art_root root, size_t *count, const char *uri);
 
 /*
  * Parse a date in the following format:

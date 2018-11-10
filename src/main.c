@@ -112,11 +112,12 @@ static int setup()
             comment_temp == NULL ||
 	      entry_temp == NULL)
 		return -1;
-	return art_init(&blog_root, "blog");
+	blog_root = art_init("blog");
+	return blog_root == NULL ? -1 : 1;
 }
 
 
-static int set_art_dict(dict d, article *art, int flags) {
+static int set_art_dict(dict d, article art, int flags) {
 	if (flags & 0x1) {
 		struct stat statbuf;
 		int fd = open(art->file, O_RDONLY);
@@ -145,7 +146,7 @@ static int set_art_dict(dict d, article *art, int flags) {
 	return 0;
 }
 
-static char *render_comment(art_comment *comment)
+static char *render_comment(art_comment comment)
 {
 	char buf[64];
 	date_to_str(buf, comment->date);
@@ -157,7 +158,7 @@ static char *render_comment(art_comment *comment)
 		size_t size = 256, index = 0;
 		char *buf = malloc(size);
 		for (size_t i = 0; i < comment->replies->count; i++) {
-			char *b = render_comment((art_comment *)list_get(comment->replies, i));
+			char *b = render_comment(*(art_comment *)list_get(comment->replies, i));
 			buf_write(&buf, &index, &size, b, strlen(b));
 			free(b);
 		}
@@ -170,7 +171,7 @@ static char *render_comment(art_comment *comment)
 }
 
 
-static char *get_comments(art_root *root, const char *uri)
+static char *get_comments(art_root root, const char *uri)
 {
 	list ls = art_get_comments(root, uri);
 	if (ls == NULL)
@@ -178,7 +179,7 @@ static char *get_comments(art_root *root, const char *uri)
 	size_t size = 256, index = 0;
 	char *buf = malloc(size);
 	for (size_t i = 0; i < ls->count; i++) {
-		char *b = render_comment((art_comment *)list_get(ls, i));
+		char *b = render_comment(*(art_comment *)list_get(ls, i));
 		buf_write(&buf, &index, &size, b, strlen(b));
 		free(b);
 	}
@@ -207,8 +208,8 @@ int main()
 
 		if (strncmp("blog", uri, 4) == 0 && (uri[4] == '/' || uri[4] == 0)) {
 			char *nuri = uri + (uri[4] == '/' ? 5 : 4);
-			article *arts;
-			size_t count = art_get(&blog_root, &arts, nuri);
+			size_t count;
+			article *arts = art_get(blog_root, &count, nuri);
 			if (count == -1) {
 				print_error();
 				continue;
@@ -216,24 +217,26 @@ int main()
 			char *body;
 			dict d = dict_create();
 			if (count == 1) {
-				if (set_art_dict(d, &arts[0], 0x1) < 0) {
+				if (set_art_dict(d, arts[0], 0x1) < 0) {
 					print_error();
 					continue;
 				}
-				article *art;
-				if (arts[0].prev[0] != 0) {
-					art_get(&blog_root, &art, arts[0].prev);
-					dict_set(d, "PREV_URI"  , art->uri  );
-					dict_set(d, "PREV_TITLE", art->title);
+				size_t dummy;
+				if (arts[0]->prev[0] != 0) {
+					article *art = art_get(blog_root, &dummy, arts[0]->prev);
+					dict_set(d, "PREV_URI"  , art[0]->uri  );
+					dict_set(d, "PREV_TITLE", art[0]->title);
+					free(*art);
 					free(art);
 				}
-				if (arts[0].next[0] != 0) {
-					art_get(&blog_root, &art, arts[0].next);
-					dict_set(d, "NEXT_URI"  , art->uri  );
-					dict_set(d, "NEXT_TITLE", art->title);
+				if (arts[0]->next[0] != 0) {
+					article *art = art_get(blog_root, &dummy, arts[0]->next);
+					dict_set(d, "NEXT_URI"  , art[0]->uri  );
+					dict_set(d, "NEXT_TITLE", art[0]->title);
+					free(*art);
 					free(art);
 				}
-				char *b = get_comments(&blog_root, nuri);
+				char *b = get_comments(blog_root, nuri);
 				dict_set(d, "COMMENTS", b);
 				free(b);
 				body = temp_render(art_temp, d);
@@ -241,7 +244,7 @@ int main()
 				size_t size = 0x1000, index = 0;
 				body = malloc(size);
 				for (size_t i = 0; i < count; i++) {
-					if (set_art_dict(d, &arts[i], 0) < 0) {
+					if (set_art_dict(d, arts[i], 0) < 0) {
 						print_error();
 						goto error;
 					}
@@ -259,7 +262,9 @@ int main()
 				if (buf_write(&body, &index, &size, nul, 1) < 0)
 					/* TODO */;
 			}
-			dict_free(d);			
+			dict_free(d);
+			for (size_t i = 0; i < count; i++)
+				free(arts[i]);			
 			free(arts);
 			dict_set(md, "BODY", body);
 			free(body);
@@ -323,7 +328,7 @@ int main()
 		dict_free(md);
 		fflush(stdout);
 	}
-	art_free(&blog_root);
+	art_free(blog_root);
 	// Goddamnit Valgrind
 	temp_free(   main_temp);
 	temp_free(  error_temp);

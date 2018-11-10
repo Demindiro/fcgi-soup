@@ -75,46 +75,36 @@ static int to_uint(const char **pptr, uint *res)
 }
 
 
-static int art_get_between_times(art_root *root, article **dest, uint32_t t0, uint32_t t1)
-{
-	t0 = htonl(t0);
-	t1 = htonl(t1);
-	const char **entries;
-	size_t count = db_get_range(&root->db, (void *)&entries, ART_DATE_FIELD, &t0, &t1);
-	article *arts = *dest = calloc(count, sizeof(article));
-	for (size_t i = 0; i < count; i++) {
-		db_get_field(&root->db, arts[i].uri   , entries[i], ART_URI_FIELD   );
-		db_get_field(&root->db, arts[i].file  , entries[i], ART_FILE_FIELD  );
-		db_get_field(&root->db, (char *)&arts[i].date  , entries[i], ART_DATE_FIELD  );
-		db_get_field(&root->db, arts[i].author, entries[i], ART_AUTHOR_FIELD);
-		db_get_field(&root->db, arts[i].title , entries[i], ART_TITLE_FIELD );
-	}
-	free(entries);
-	return count;
-}
+/*
+ * Comments
+ */
 
-
-static int get_comment(art_comment *dest, const char *entry, database *db, int fd)
+static art_comment get_comment(const char *entry, database *db, int fd)
 {
 	uint32_t index, length;
-	db_get_field(db, &dest->reply_to, entry, ART_COMM_REPLY_FIELD );
-	db_get_field(db, &dest->author  , entry, ART_COMM_AUTHOR_FIELD);
-	db_get_field(db, &dest->id      , entry, ART_COMM_ID_FIELD    );
-	db_get_field(db, &dest->date    , entry, ART_COMM_DATE_FIELD  );
-	db_get_field(db, &index         , entry, ART_COMM_INDEX_FIELD );
-	db_get_field(db, &length        , entry, ART_COMM_LENGTH_FIELD);
-	dest->body = malloc(length + 1);
-	if (dest->body == NULL)
-		return -1;
+	art_comment c = malloc(sizeof(*c));
+	if (c == NULL)
+		return NULL;
+	db_get_field(db, &c->reply_to, entry, ART_COMM_REPLY_FIELD );
+	db_get_field(db, &c->author  , entry, ART_COMM_AUTHOR_FIELD);
+	db_get_field(db, &c->id      , entry, ART_COMM_ID_FIELD    );
+	db_get_field(db, &c->date    , entry, ART_COMM_DATE_FIELD  );
+	db_get_field(db, &index      , entry, ART_COMM_INDEX_FIELD );
+	db_get_field(db, &length     , entry, ART_COMM_LENGTH_FIELD);
+	c->body = malloc(length + 1);
+	if (c->body == NULL) {
+		free(c);
+		return NULL;
+	}
 	lseek(fd, index, SEEK_SET);
-	read(fd, dest->body, length);
-	dest->body[length] = 0;
-	dest->replies = list_create(sizeof(art_comment));
-	return 0;
+	read(fd, c->body, length);
+	c->body[length] = 0;
+	c->replies = list_create(sizeof(*c));
+	return c;
 }
 
 
-list art_get_comments(art_root *root, const char *name)
+list art_get_comments(art_root root, const char *name)
 {
 	char file[256], *ptr = file;
 	size_t l = strlen(root->dir);
@@ -144,17 +134,18 @@ list art_get_comments(art_root *root, const char *name)
 	if (count == -1)
 		goto error;
 
-	comments = malloc(count * sizeof(art_comment));
+	comments = malloc(count * sizeof(*comments));
 	for (size_t i = 0; i < count; i++) {
-		if (get_comment(&comments[count - i - 1], entries[i], &db, fd) < 0)
+		comments[count - i - 1] = get_comment(entries[i], &db, fd);
+		if (comments[count - i - 1] == NULL)
 			goto error;
 	}
 
 	ls = list_create(sizeof(art_comment));
 	for (size_t i = 0; i < count; i++) {
-		art_comment *c = &comments[i];
-		list l = c->reply_to == -1 ? ls : comments[c->reply_to].replies;
-		if (list_add(l, c) < 0)
+		art_comment c = comments[i];
+		list l = c->reply_to == -1 ? ls : comments[c->reply_to]->replies;
+		if (list_add(l, &c) < 0)
 			goto error;
 	}
 
@@ -174,22 +165,32 @@ success:
 void art_free_comments(list ls)
 {
 	for (size_t i = 0; i < ls->count; i++) {
-		art_comment *c = (art_comment *)list_get(ls, i);
+		art_comment c = *(art_comment *)list_get(ls, i);
 		free(c->body);
+		free(c);
 		art_free_comments(c->replies);
 	}
 	list_free(ls);
 }
 
 
-int art_init(art_root *root, const char *path)
+/*
+ * Root
+ */
+
+art_root art_init(const char *path)
 {
 	size_t l = strlen(path);	
-	
+	art_root root = malloc(sizeof(*root));
+	if (root == NULL)
+		return NULL;
+
 	int append_slash = path[l-1] != '/';
 	root->dir = malloc(l + append_slash + 1);
-	if (root->dir == NULL)
-		return -1;
+	if (root->dir == NULL) {
+		free(root);
+		return NULL;
+	}
 	memcpy(root->dir, path, l);
 	if (append_slash) {
 		root->dir[l+0] = '/';
@@ -211,27 +212,58 @@ int art_init(art_root *root, const char *path)
 			[ART_TITLE_FIELD ] = ART_TITLE_LEN ,
 		}; 
 		if (db_create(&root->db, buf, f_count, f_lens) < 0) {
+			free(root);
 			free(root->dir);
-			return -1;
+			return NULL;
 		}
 		db_create_map(&root->db, ART_URI_FIELD);
 		db_create_map(&root->db, ART_DATE_FIELD);
 	}
-	return 0;
+	return root;
 }
 
 
-int art_get(art_root *root, article **dest, const char *uri) {
+void art_free(art_root root)
+{
+	db_free(&root->db);
+	free(root->dir);
+	free(root);
+}
+
+/*
+ * Article
+ */
+static article *art_get_between_times(art_root root, size_t *count, uint32_t t0, uint32_t t1)
+{
+	t0 = htonl(t0);
+	t1 = htonl(t1);
+	const char **entries;
+	*count = db_get_range(&root->db, (void *)&entries, ART_DATE_FIELD, &t0, &t1);
+	article *arts = calloc(*count, sizeof(*arts));
+	for (size_t i = 0; i < *count; i++) {
+		arts[i] = malloc(sizeof(*arts[i]));
+		db_get_field(&root->db, arts[i]->uri   , entries[i], ART_URI_FIELD   );
+		db_get_field(&root->db, arts[i]->file  , entries[i], ART_FILE_FIELD  );
+		db_get_field(&root->db, (char *)&arts[i]->date  , entries[i], ART_DATE_FIELD  );
+		db_get_field(&root->db, arts[i]->author, entries[i], ART_AUTHOR_FIELD);
+		db_get_field(&root->db, arts[i]->title , entries[i], ART_TITLE_FIELD );
+	}
+	free(entries);
+	return arts;
+}
+
+
+article *art_get(art_root root, size_t *count, const char *uri) {
 	const char *ptr = uri;
 	if ('0' <= *ptr && *ptr <= '9') {
 		uint year = 0, month = 0, day = 0;
 		uint32_t time0, time1;
 		if (to_uint(&ptr, &year ) < 0)
-			return -1;
+			return NULL;
                 if (*ptr != 0 && ptr++ && to_uint(&ptr, &month) < 0)
-			return -1;
+			return NULL;
 		if (*ptr != 0 && ptr++ && to_uint(&ptr, &day  ) < 0)
-			return -1;
+			return NULL;
 		if (month == 0) {
 			time0 = format_date(year,  0,  0,  0,  0);
 			time1 = format_date(year, 11, 31, 23, 59);
@@ -242,11 +274,12 @@ int art_get(art_root *root, article **dest, const char *uri) {
 			time0 = format_date(year, month, day,  0,  0);
 			time1 = format_date(year, month, day, 23, 59);
 		}
-		return art_get_between_times(root, dest, time0, time1);
+		return art_get_between_times(root, count, time0, time1);
 	} else if (*ptr == 0) {
-		return art_get_between_times(root, dest, 0, 0xFFffFFff);	
+		return art_get_between_times(root, count, 0, 0xFFffFFff);	
 	} else {
-		article *art = *dest = calloc(1, sizeof(article));
+		article *arts = malloc(sizeof(*arts));
+		article  art  = arts[0] = calloc(1, sizeof(*art));
 
 		char dburi[ART_FILE_LEN];
 		memset(dburi, 0, sizeof(dburi));
@@ -263,10 +296,9 @@ int art_get(art_root *root, article **dest, const char *uri) {
 			goto error;
 		ptr[strlen(ptr)] = 0;
 
-		if (db_get_field(&root->db, (char *)&art->date, entry, ART_DATE_FIELD  ) < 0 ||
-		    db_get_field(&root->db,  art->title , entry, ART_TITLE_FIELD ) < 0 ||
-		    db_get_field(&root->db,  art->author, entry, ART_AUTHOR_FIELD) < 0)
-			/* TODO */;
+		db_get_field(&root->db, (char *)&art->date  , entry, ART_DATE_FIELD  );
+		db_get_field(&root->db,          art->title , entry, ART_TITLE_FIELD );
+		db_get_field(&root->db,          art->author, entry, ART_AUTHOR_FIELD);
 
 		const char *prev = db_get_offset(&root->db, ART_URI_FIELD, dburi, -1),
 		           *next = db_get_offset(&root->db, ART_URI_FIELD, dburi,  1);
@@ -277,16 +309,11 @@ int art_get(art_root *root, article **dest, const char *uri) {
 
 		strncpy(art->uri, uri, ART_URI_LEN);
 
-		return 1;
+		*count = 1;
+		return arts;
 	error:
-		free(art);
-		return -1;
+		free(arts);
+		free(art );
+		return NULL;
 	}
-}
-
-
-void art_free(art_root *root)
-{
-	db_free(&root->db);
-	free(root->dir);
 }

@@ -21,7 +21,7 @@ int list_remove(list ls, size_t index);
 
 int list_set(list ls, size_t index, void *item);
 
-const void *list_get(list ls, size_t index);
+void *list_get(list ls, size_t index);
 
 void *list_to_array(list ls);
 
