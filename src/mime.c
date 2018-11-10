@@ -1,6 +1,6 @@
 #include "../include/mime.h"
 #include <stdlib.h>
-#include "../include/dictionary.h"
+#include "../include/dict.h"
 
 static dictionary dict;
 

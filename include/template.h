@@ -3,7 +3,7 @@
 
 
 #include <stddef.h>
-#include "dictionary.h"
+#include "dict.h"
 
 
 /*

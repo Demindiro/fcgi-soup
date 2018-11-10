@@ -2,7 +2,7 @@
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
-#include "../include/dictionary.h"
+#include "../include/dict.h"
 #include "util/string.h"
 
 

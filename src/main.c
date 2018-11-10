@@ -1,6 +1,10 @@
 #include <errno.h>
 #include <fastcgi.h>
+#ifdef NORMAL_STDIO
+#include <stdio.h>
+#else
 #include <fcgi_stdio.h>
+#endif
 #include <fcntl.h>
 #include <string.h>
 #include <stdlib.h>
@@ -8,8 +12,8 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include "util/string.h"
-#include "../include/article.h"
-#include "../include/dictionary.h"
+#include "../include/art.h"
+#include "../include/dict.h"
 #include "../include/template.h"
 #include "../include/mime.h"
 
@@ -19,18 +23,20 @@
 #define ERROR_TEMP   TEMPLATE_DIR "error.html"
 #define ARTICLE_TEMP TEMPLATE_DIR "article.html"
 #define ENTRY_TEMP   TEMPLATE_DIR "article_entry.html"
+#define COMMENT_TEMP TEMPLATE_DIR "comment.html"
 
 
 time_t main_mod_time;
 time_t error_mod_time;
 template main_temp;
 template error_temp;
-template article_temp;
+template art_temp;
 template entry_temp;
+template comment_temp;
 dictionary main_dict;
 dictionary error_dict;
 
-article_root blog_root;
+art_root blog_root;
 
 
 #define return_error(msg, ...) { fprintf(stderr, msg, ##__VA_ARGS__); perror(": "); return -1; } ""
@@ -102,10 +108,11 @@ static int setup()
 	}
 	if (load_template(MAIN_TEMP   , &main_temp   ) < 0 ||
 	    load_template(ERROR_TEMP  , &error_temp  ) < 0 ||
-	    load_template(ARTICLE_TEMP, &article_temp) < 0 ||
+	    load_template(ARTICLE_TEMP, &art_temp    ) < 0 ||
+	    load_template(COMMENT_TEMP, &comment_temp) < 0 ||
 	    load_template(ENTRY_TEMP  , &entry_temp  ) < 0)
 		return -1;
-	return article_init(&blog_root, "blog");
+	return art_init(&blog_root, "blog");
 }
 
 
@@ -132,7 +139,7 @@ static void unmap_or_free_file(char *ptr, size_t size)
 }
 
 
-static int set_article_dict(dictionary *dict, article *art, int flags) {
+static int set_art_dict(dictionary *dict, article *art, int flags) {
 	if (flags & 0x1) {
 		struct stat statbuf;
 		int fd = open(art->file, O_RDONLY);
@@ -147,6 +154,7 @@ static int set_article_dict(dictionary *dict, article *art, int flags) {
 		read(fd, buf, statbuf.st_size);
 		buf[statbuf.st_size] = 0;
 		dict_set(dict, "BODY", buf);
+		free(buf);
 	}
 
 	char datestr[64];
@@ -158,6 +166,46 @@ static int set_article_dict(dictionary *dict, article *art, int flags) {
 	dict_set(dict, "AUTHOR", art->author);
 
 	return 0;
+}
+
+static char *render_comment(art_comment *comment)
+{
+	dictionary d;
+	char buf[64];
+	date_to_str(buf, comment->date);
+	dict_create(&d);
+	dict_set(&d, "AUTHOR", comment->author);
+	dict_set(&d, "DATE"  , buf);
+	dict_set(&d, "BODY"  , comment->body);
+	if (comment->replies.count > 0) {
+		size_t size = 256, index = 0;
+		char *buf = malloc(size);
+		for (size_t i = 0; i < comment->replies.count; i++) {
+			char *b = render_comment((art_comment *)list_get(&comment->replies, i));
+			buf_write(&buf, &index, &size, b, strlen(b));
+			free(b);
+		}
+		dict_set(&d, "REPLIES", buf);
+	}
+	char *body = template_parse(&comment_temp, &d);
+	dict_free(&d);
+	return body;
+}
+
+static char *get_comments(art_root *root, const char *uri)
+{
+	list ls;
+	if (art_get_comments(root, &ls, uri) < 0)
+		return NULL;
+	size_t size = 256, index = 0;
+	char *buf = malloc(size);
+	for (size_t i = 0; i < ls.count; i++) {
+		char *b = render_comment((art_comment *)list_get(&ls, i));
+		buf_write(&buf, &index, &size, b, strlen(b));
+		free(b);
+	}
+	art_free_comments(&ls);
+	return buf;
 }
 
 
@@ -180,7 +228,7 @@ int main()
 		if (strncmp("blog", uri, 4) == 0 && (uri[4] == '/' || uri[4] == 0)) {
 			char *nuri = uri + (uri[4] == '/' ? 5 : 4);
 			article *arts;
-			size_t count = article_get(&blog_root, &arts, nuri);
+			size_t count = art_get(&blog_root, &arts, nuri);
 			if (count == -1) {
 				print_error();
 				continue;
@@ -189,27 +237,32 @@ int main()
 			dictionary dict;
 			dict_create(&dict);
 			if (count == 1) {
-				if (set_article_dict(&dict, &arts[0], 0x1) < 0) {
+				if (set_art_dict(&dict, &arts[0], 0x1) < 0) {
 					print_error();
 					continue;
 				}
 				article *art;
 				if (arts[0].prev[0] != 0) {
-					article_get(&blog_root, &art, arts[0].prev);
+					art_get(&blog_root, &art, arts[0].prev);
 					dict_set(&dict, "PREV_URI"  , art->uri  );
 					dict_set(&dict, "PREV_TITLE", art->title);
+					free(art);
 				}
 				if (arts[0].next[0] != 0) {
-					article_get(&blog_root, &art, arts[0].next);
+					art_get(&blog_root, &art, arts[0].next);
 					dict_set(&dict, "NEXT_URI"  , art->uri  );
 					dict_set(&dict, "NEXT_TITLE", art->title);
+					free(art);
 				}
-				body = template_parse(&article_temp, &dict);
+				char *b = get_comments(&blog_root, nuri);
+				dict_set(&dict, "COMMENTS", b);
+				free(b);
+				body = template_parse(&art_temp, &dict);
 			} else {
 				size_t size = 0x1000, index = 0;
 				body = malloc(size);
 				for (size_t i = 0; i < count; i++) {
-					if (set_article_dict(&dict, &arts[i], 0) < 0) {
+					if (set_art_dict(&dict, &arts[i], 0) < 0) {
 						print_error();
 						goto error;
 					}
@@ -290,6 +343,6 @@ int main()
 		free(body);
 		fflush(stdout);
 	}
-	article_free(&blog_root);
+	art_free(&blog_root);
 	return 0;
 }
