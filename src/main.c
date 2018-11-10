@@ -177,11 +177,11 @@ static char *render_comment(art_comment *comment)
 	dict_set(&d, "AUTHOR", comment->author);
 	dict_set(&d, "DATE"  , buf);
 	dict_set(&d, "BODY"  , comment->body);
-	if (comment->replies.count > 0) {
+	if (comment->replies->count > 0) {
 		size_t size = 256, index = 0;
 		char *buf = malloc(size);
-		for (size_t i = 0; i < comment->replies.count; i++) {
-			char *b = render_comment((art_comment *)list_get(&comment->replies, i));
+		for (size_t i = 0; i < comment->replies->count; i++) {
+			char *b = render_comment((art_comment *)list_get(comment->replies, i));
 			buf_write(&buf, &index, &size, b, strlen(b));
 			free(b);
 		}
@@ -192,19 +192,20 @@ static char *render_comment(art_comment *comment)
 	return body;
 }
 
+
 static char *get_comments(art_root *root, const char *uri)
 {
-	list ls;
-	if (art_get_comments(root, &ls, uri) < 0)
+	list ls = art_get_comments(root, uri);
+	if (ls == NULL)
 		return NULL;
 	size_t size = 256, index = 0;
 	char *buf = malloc(size);
-	for (size_t i = 0; i < ls.count; i++) {
-		char *b = render_comment((art_comment *)list_get(&ls, i));
+	for (size_t i = 0; i < ls->count; i++) {
+		char *b = render_comment((art_comment *)list_get(ls, i));
 		buf_write(&buf, &index, &size, b, strlen(b));
 		free(b);
 	}
-	art_free_comments(&ls);
+	art_free_comments(ls);
 	return buf;
 }
 

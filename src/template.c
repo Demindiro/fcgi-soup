@@ -142,6 +142,7 @@ void template_free(template *temp)
 	free(temp->parts  );
 	free(temp->lengths);
 	free(temp->args   );
+	free(temp->flags  );
 }
 
 

@@ -106,19 +106,22 @@ static int get_comment(art_comment *dest, const char *entry, database *db, int f
 	dest->body = malloc(length + 1);
 	if (dest->body == NULL)
 		return -1;
-	lseek(fd, SEEK_SET, index);
+	lseek(fd, index, SEEK_SET);
 	read(fd, dest->body, length);
 	dest->body[length] = 0;
+	dest->replies = list_create(sizeof(art_comment));
 	return 0;
 }
 
 
-int art_get_comments(art_root *root, list *dest, const char *name)
+list art_get_comments(art_root *root, const char *name)
 {
 	char file[256], *ptr = file;
 	size_t l = strlen(root->dir);
 	const char **entries = NULL;
-
+	art_comment *comments = NULL;
+	list ls = NULL;
+ 
 	memcpy(ptr, root->dir, l);
 	ptr += l;
 	l = sizeof("comments");
@@ -141,33 +144,39 @@ int art_get_comments(art_root *root, list *dest, const char *name)
 	if (count == -1)
 		goto error;
 
-	list_create(dest, sizeof(art_comment));
+	comments = malloc(count * sizeof(art_comment));
 	for (size_t i = 0; i < count; i++) {
-		art_comment comment;	
-		if (get_comment(&comment, entries[i], &db, fd) < 0)
-			goto error;
-		if (list_add(dest, &comment) < 0)
+		if (get_comment(&comments[count - i - 1], entries[i], &db, fd) < 0)
 			goto error;
 	}
 
-	int r = 0;
+	ls = list_create(sizeof(art_comment));
+	for (size_t i = 0; i < count; i++) {
+		art_comment *c = &comments[i];
+		list l = c->reply_to == -1 ? ls : comments[c->reply_to].replies;
+		if (list_add(l, c) < 0)
+			goto error;
+	}
+
 	goto success;
 error:
-	r = -1;
+	free(ls);
+	ls = NULL;
 success:
 	free(entries);
+	free(comments);
 	db_free(&db);
 	close(fd);
-	return r;
+	return ls;
 }
 
 
-void art_free_comments(list *ls)
+void art_free_comments(list ls)
 {
 	for (size_t i = 0; i < ls->count; i++) {
 		art_comment *c = (art_comment *)list_get(ls, i);
 		free(c->body);
-		art_free_comments(&c->replies);
+		art_free_comments(c->replies);
 	}
 	list_free(ls);
 }
@@ -253,7 +262,7 @@ int art_get(art_root *root, article **dest, const char *uri) {
 		if (db_get_field(&root->db, ptr, entry, ART_FILE_FIELD) < 0)
 			goto error;
 		ptr[strlen(ptr)] = 0;
-	
+
 		if (db_get_field(&root->db, (char *)&art->date, entry, ART_DATE_FIELD  ) < 0 ||
 		    db_get_field(&root->db,  art->title , entry, ART_TITLE_FIELD ) < 0 ||
 		    db_get_field(&root->db,  art->author, entry, ART_AUTHOR_FIELD) < 0)

@@ -74,12 +74,12 @@ int art_get(art_root *root, article **dest, const char *uri);
 /*
  * Get the comments by an article
  */
-int art_get_comments(art_root *root, list *dest, const char *uri);
+list art_get_comments(art_root *root, const char *uri);
 
 /*
  *
  */
-void art_free_comments(list *dest);
+void art_free_comments(list ls);
 
 /*
  * Frees memory and stores any changes to the database

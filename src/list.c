@@ -2,25 +2,31 @@
 #include <stdlib.h>
 #include <string.h>
 
-int list_create(list *ls, size_t size)
+list list_create(size_t size)
 {
+	list ls = malloc(sizeof(struct list));
+	if (ls == NULL)
+		return NULL;
 	ls->size = size;
 	ls->capacity = 2;
 	ls->_data = malloc(ls->capacity * ls->size);
-	if (ls->_data == NULL)
-		return -1;
+	if (ls->_data == NULL) {
+		free(ls);
+		return NULL;
+	}
 	ls->count = 0;
-	return 0;
+	return ls;
 }
 
 
-void list_free(list *ls)
+void list_free(list ls)
 {
 	free(ls->_data);
+	free(ls);
 }
 
 
-int list_add(list *ls, void *item)
+int list_add(list ls, void *item)
 {
 	if (ls->capacity == ls->count) {
 		size_t c = ls->capacity * 3 / 2;
@@ -36,7 +42,7 @@ int list_add(list *ls, void *item)
 }
 
 
-int list_remove(list *ls, size_t index)
+int list_remove(list ls, size_t index)
 {
 	if (ls->count <= index)
 		return -1;
@@ -48,7 +54,7 @@ int list_remove(list *ls, size_t index)
 }
 
 
-int list_set(list *ls, size_t index, void *item)
+int list_set(list ls, size_t index, void *item)
 {
 	if (ls->count <= index)
 		return -1;
@@ -57,7 +63,7 @@ int list_set(list *ls, size_t index, void *item)
 }
 
 
-const void *list_get(list *ls, size_t index)
+const void *list_get(list ls, size_t index)
 {
 	if (ls->count <= index)
 		return NULL;
