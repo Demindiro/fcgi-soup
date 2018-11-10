@@ -1,8 +1,8 @@
 proj_root = $(shell pwd)
 soup_src  = src/*.c src/**/*.c
-dbman_src = dbman/main.c src/article.c src/dictionary.c src/template.c src/database.c src/**/*.c
+dbman_src = dbman/main.c src/article.c src/dictionary.c src/template.c src/db.c src/**/*.c
 
-db  = gdb
+db  = lldb
 mem = valgrind
 
 
@@ -21,10 +21,10 @@ build_release:
 
 
 run:
-	(cd $(ROOT); REQUEST_URI=$(URI) $(proj_root)/build/soup)
+	(cd $(ROOT); PATH_INFO=$(URI) $(proj_root)/build/soup)
 
 run_db:
-	(cd $(ROOT); REQUEST_URI=$(URI) $(db) $(DB_FLAGS) $(proj_root)/build/soup)
+	(cd $(ROOT); PATH_INFO=$(URI) $(db) $(DB_FLAGS) $(proj_root)/build/soup)
 
 run_mem:
-	(cd $(ROOT); REQUEST_URI=$(URI) $(mem) $(DB_FLAGS) $(proj_root)/build/soup)
+	(cd $(ROOT); PATH_INFO=$(URI) $(mem) $(DB_FLAGS) $(proj_root)/build/soup)

@@ -7,7 +7,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "util/string.h"
-#include "../include/database.h"
+#include "../include/db.h"
 
 
 // 1U << 30 == 1 Gigabyte
@@ -40,7 +40,7 @@ static int get_map_name(database *db, uint8_t field, char *buf, size_t size)
 }
 
 
-int database_create(database *db, const char *file, uint8_t field_count, uint16_t *field_lengths)
+int db_create(database *db, const char *file, uint8_t field_count, uint16_t *field_lengths)
 {
 	int fd = open(file, O_RDWR | O_CREAT, 0644);
 	if (fd < 0)
@@ -76,7 +76,7 @@ int database_create(database *db, const char *file, uint8_t field_count, uint16_
 }
 
 
-int database_load(database *db, const char *file)
+int db_load(database *db, const char *file)
 {
 	int fd = open(file, O_RDWR);
 	if (fd < 0)
@@ -124,7 +124,7 @@ int database_load(database *db, const char *file)
 }
 
 
-void database_free(database *db)
+void db_free(database *db)
 {
 	for (size_t i = 0; i < db->field_count; i++) {
 		if (db->maps[i].data != NULL)
@@ -134,7 +134,7 @@ void database_free(database *db)
 }
 
 
-int database_create_map(database *db, uint8_t field)
+int db_create_map(database *db, uint8_t field)
 {
 	char name[256];
 	if (field >= db->field_count ||
@@ -159,7 +159,7 @@ int database_create_map(database *db, uint8_t field)
 }
 
 
-const char *database_get(database *db, uint8_t keyfield, const char *key)
+const void *db_get(database *db, uint8_t keyfield, const void *key)
 {
 	size_t f_offset = get_offset(db, keyfield);
 	for (size_t i = 0; i < *db->count; i++) {
@@ -172,9 +172,9 @@ const char *database_get(database *db, uint8_t keyfield, const char *key)
 }
 
 
-const char *database_get_offset(database *db, uint8_t keyfield, const char *key, ssize_t offset)
+const void *db_get_offset(database *db, uint8_t keyfield, const void *key, ssize_t offset)
 {
-	const char *entry = database_get(db, keyfield, key);
+	const char *entry = db_get(db, keyfield, key);
 	if (entry == NULL)
 		return NULL;
 	entry += (ssize_t)db->entry_length * offset;
@@ -184,12 +184,12 @@ const char *database_get_offset(database *db, uint8_t keyfield, const char *key,
 }
 
 
-int database_add(database *db, const char *entry)
+int db_add(database *db, const void *entry)
 {
 	size_t indices[db->field_count];
 	// Verify first that there are no duplicate fields in the mappings
 	for (size_t i = 0; i < db->field_count; i++) {
-		database_map map = db->maps[i];
+		db_map map = db->maps[i];
 		if (map.data == NULL)
 			continue;
 		size_t flen = db->field_lengths[i], elen = flen + sizeof(*db->count);
@@ -208,7 +208,7 @@ int database_add(database *db, const char *entry)
 		next_field:;
 	}
 	for (size_t i = 0; i < db->field_count; i++) {
-		database_map map = db->maps[i];
+		db_map map = db->maps[i];
 		if (map.data == NULL)
 			continue;
 		const char *field = entry + get_offset(db, i);
@@ -227,9 +227,9 @@ int database_add(database *db, const char *entry)
 }
 
 
-int database_del(database *db, uint8_t keyfield, const char *key)
+int db_del(database *db, uint8_t keyfield, const void *key)
 {
-	char *entry = (char *)database_get(db, keyfield, key);
+	char *entry = (char *)db_get(db, keyfield, key);
 	if (entry == NULL)
 		return -1;
 	memset(entry, 0, db->entry_length);
@@ -238,7 +238,7 @@ int database_del(database *db, uint8_t keyfield, const char *key)
 
 
 // TODO check if a map has to be updated
-int database_get_field(database *db, char *buf, const char *entry, uint8_t field)
+int db_get_field(database *db, void *buf, const void *entry, uint8_t field)
 {
 	size_t f_offset = get_offset(db, field);
 	memcpy(buf, entry + f_offset, db->field_lengths[field]);
@@ -246,7 +246,7 @@ int database_get_field(database *db, char *buf, const char *entry, uint8_t field
 }
 
 
-int database_set_field(database *db, char *entry, uint8_t field, const void *val)
+int db_set_field(database *db, void *entry, uint8_t field, const void *val)
 {
 	size_t f_offset = get_offset(db, field);
 	memcpy(entry + f_offset, val, db->field_lengths[field]);
@@ -254,12 +254,42 @@ int database_set_field(database *db, char *entry, uint8_t field, const void *val
 }
 // === //
 
-uint32_t database_get_range(database *db, const char ***entries, uint8_t field, const void *key0, const void *key1)
+
+uint32_t db_get_all_entries(database *db, const void ***entries, uint8_t field)
 {
-	if (field >= db->field_count)
+	if (field >= db->field_count) {
+		errno = EINVAL;
+		return -1;
+	}
+	
+	const void **ent = *entries = malloc(*db->count * sizeof(char *));
+	if (entries == NULL)
 		return -1;
 
-	database_map map = db->maps[field];
+	size_t i = 0;
+	db_map map = db->maps[field];
+	if (map.data != NULL) {
+		size_t flen = db->field_lengths[field], elen = flen + sizeof(*map.count);
+		for ( ; i < *map.count; i++) {
+			size_t index = *(uint32_t *)(map.data + (elen * i) + flen);
+			ent[i] = db->data + (db->entry_length * index);
+		}
+	}
+	for ( ; i < *db->count; i++)
+		ent[i] = db->data + (db->entry_length * i);
+
+	return *db->count;
+}
+
+
+uint32_t db_get_range(database *db, const void ***entries, uint8_t field, const void *key0, const void *key1)
+{
+	if (field >= db->field_count) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	db_map map = db->maps[field];
 	if (map.data != NULL) {
 		size_t i = 0, start, end;
 		size_t flen = db->field_lengths[field], elen = flen + sizeof(*db->count);

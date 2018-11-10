@@ -25,14 +25,12 @@
 #include <time.h>
 #include <arpa/inet.h> // htonl()
 #include "util/string.h"
-#include "../include/database.h"
+#include "../include/db.h"
 #include "../include/dictionary.h"
 #include "../include/template.h"
 
 
-
 typedef unsigned int uint;
-
 
 
 uint32_t format_date(uint year, uint month, uint day, uint hour, uint minute)
@@ -81,17 +79,81 @@ static int article_get_between_times(article_root *root, article **dest, uint32_
 	t0 = htonl(t0);
 	t1 = htonl(t1);
 	const char **entries;
-	size_t count = database_get_range(&root->db, &entries, ARTICLE_DATE_FIELD, &t0, &t1);
+	size_t count = db_get_range(&root->db, (void *)&entries, ARTICLE_DATE_FIELD, &t0, &t1);
 	article *arts = *dest = calloc(count, sizeof(article));
 	for (size_t i = 0; i < count; i++) {
-		database_get_field(&root->db, arts[i].uri   , entries[i], ARTICLE_URI_FIELD   );
-		database_get_field(&root->db, arts[i].file  , entries[i], ARTICLE_FILE_FIELD  );
-		database_get_field(&root->db, (char *)&arts[i].date  , entries[i], ARTICLE_DATE_FIELD  );
-		database_get_field(&root->db, arts[i].author, entries[i], ARTICLE_AUTHOR_FIELD);
-		database_get_field(&root->db, arts[i].title , entries[i], ARTICLE_TITLE_FIELD );
+		db_get_field(&root->db, arts[i].uri   , entries[i], ARTICLE_URI_FIELD   );
+		db_get_field(&root->db, arts[i].file  , entries[i], ARTICLE_FILE_FIELD  );
+		db_get_field(&root->db, (char *)&arts[i].date  , entries[i], ARTICLE_DATE_FIELD  );
+		db_get_field(&root->db, arts[i].author, entries[i], ARTICLE_AUTHOR_FIELD);
+		db_get_field(&root->db, arts[i].title , entries[i], ARTICLE_TITLE_FIELD );
 	}
 	free(entries);
 	return count;
+}
+
+
+static int get_comment(article_comment *dest, const char *entry, database *db, int fd)
+{
+	uint32_t index, length;
+	db_get_field(db, &dest->reply_to, entry, ARTICLE_REPLY_FIELD );
+	db_get_field(db, &dest->author  , entry, ARTICLE_AUTHOR_FIELD);
+	db_get_field(db, &index         , entry, ARTICLE_INDEX_FIELD );
+	db_get_field(db, &length        , entry, ARTICLE_LENGTH_FIELD);
+	dest->body = malloc(length + 1);
+	if (dest->body == NULL)
+		return -1;
+	lseek(fd, SEEK_SET, index);
+	read(fd, dest->body, length);
+	dest->body[length] = 0;
+	return 0;
+}
+
+
+int article_get_comments(article_root *root, list *dest, const char *name)
+{
+	char file[256], *ptr = file;
+	size_t l = strlen(root->dir);
+
+	memcpy(ptr, root->dir, l);
+	ptr += l;
+	l = sizeof("comments");
+	memcpy(ptr, "comments/", l);
+	ptr += l;
+	l = strlen(name);
+	memcpy(ptr, name, l);
+	ptr += l;
+
+	memcpy(ptr, "comments", sizeof("comments"));
+	int fd = open(file, O_RDONLY);
+	if (fd == -1)
+		goto error;
+
+	memcpy(ptr, "db", sizeof("db"));
+	database db;
+	if (db_load(&db, name) < 0)
+		goto error;
+	const char **entries;
+	uint32_t count = db_get_all_entries(&db, (void *)&entries, 0);
+	if (count == -1)
+		goto error;
+
+	for (size_t i = 0; i < count; i++) {
+		article_comment comment;	
+		if (get_comment(&comment, entries[i], &db, fd) < 0)
+			goto error;
+		if (list_add(dest, &comment) < 0)
+			goto error;
+	}
+
+	int r = 0;
+	goto success;
+error:
+	r = -1;
+success:
+	db_free(&db);
+	close(fd);
+	return r;
 }
 
 
@@ -114,7 +176,7 @@ int article_init(article_root *root, const char *path)
 	char buf[256];
 	memcpy(buf, path, l);
 	memcpy(buf + l, ".db", sizeof(".db"));
-	if (database_load(&root->db, buf) < 0) {
+	if (db_load(&root->db, buf) < 0) {
 		uint8_t f_count = 5;
 		uint16_t f_lens[5] = {
 			[ARTICLE_URI_FIELD   ] = ARTICLE_URI_LEN   ,
@@ -123,12 +185,12 @@ int article_init(article_root *root, const char *path)
 			[ARTICLE_AUTHOR_FIELD] = ARTICLE_AUTHOR_LEN,
 			[ARTICLE_TITLE_FIELD ] = ARTICLE_TITLE_LEN ,
 		}; 
-		if (database_create(&root->db, buf, f_count, f_lens) < 0) {
+		if (db_create(&root->db, buf, f_count, f_lens) < 0) {
 			free(root->dir);
 			return -1;
 		}
-		database_create_map(&root->db, ARTICLE_URI_FIELD);
-		database_create_map(&root->db, ARTICLE_DATE_FIELD);
+		db_create_map(&root->db, ARTICLE_URI_FIELD);
+		db_create_map(&root->db, ARTICLE_DATE_FIELD);
 	}
 	return 0;
 }
@@ -164,7 +226,7 @@ int article_get(article_root *root, article **dest, const char *uri) {
 		char dburi[ARTICLE_FILE_LEN];
 		memset(dburi, 0, sizeof(dburi));
 		strncpy(dburi, uri, sizeof(dburi));
-		const char *entry = database_get(&root->db, ARTICLE_URI_FIELD, dburi);
+		const char *entry = db_get(&root->db, ARTICLE_URI_FIELD, dburi);
 		if (entry == NULL)
 			goto error;
 		
@@ -172,14 +234,24 @@ int article_get(article_root *root, article **dest, const char *uri) {
 		size_t l = strlen(root->dir);
 		memcpy(ptr, root->dir, l);
 		ptr += l;
-		if (database_get_field(&root->db, ptr, entry, ARTICLE_FILE_FIELD) < 0)
+		if (db_get_field(&root->db, ptr, entry, ARTICLE_FILE_FIELD) < 0)
 			goto error;
 		ptr[strlen(ptr)] = 0;
 	
-		if (database_get_field(&root->db, (char *)&art->date, entry, ARTICLE_DATE_FIELD  ) < 0 ||
-		    database_get_field(&root->db,  art->title , entry, ARTICLE_TITLE_FIELD ) < 0 ||
-		    database_get_field(&root->db,  art->author, entry, ARTICLE_AUTHOR_FIELD) < 0);
-		
+		if (db_get_field(&root->db, (char *)&art->date, entry, ARTICLE_DATE_FIELD  ) < 0 ||
+		    db_get_field(&root->db,  art->title , entry, ARTICLE_TITLE_FIELD ) < 0 ||
+		    db_get_field(&root->db,  art->author, entry, ARTICLE_AUTHOR_FIELD) < 0)
+			/* TODO */;
+
+		const char *prev = db_get_offset(&root->db, ARTICLE_URI_FIELD, dburi, -1),
+		           *next = db_get_offset(&root->db, ARTICLE_URI_FIELD, dburi,  1);
+		if (prev != NULL)
+			memcpy(art->prev, prev, ARTICLE_URI_LEN);
+		if (next != NULL)
+			memcpy(art->next, next, ARTICLE_URI_LEN);
+
+		strncpy(art->uri, uri, ARTICLE_URI_LEN);
+
 		return 1;
 	error:
 		free(art);
@@ -188,11 +260,8 @@ int article_get(article_root *root, article **dest, const char *uri) {
 }
 
 
-int article_get_comments(article_root *root, article_comment **dest, article *art);
-
-
 void article_free(article_root *root)
 {
-	database_free(&root->db);
+	db_free(&root->db);
 	free(root->dir);
 }

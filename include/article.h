@@ -3,7 +3,8 @@
 
 
 #include <sys/stat.h>
-#include "database.h"
+#include "db.h"
+#include "container/list.h"
 
 
 #define ARTICLE_URI_LEN      64
@@ -18,6 +19,12 @@
 #define ARTICLE_AUTHOR_FIELD 3
 #define ARTICLE_TITLE_FIELD  4
 
+#define ARTICLE_ID_FIELD     0
+#define ARTICLE_REPLY_FIELD  1
+// Already defined
+// ALready defined
+#define ARTICLE_INDEX_FIELD  4
+#define ARTICLE_LENGTH_FIELD 5
 
 typedef unsigned int uint;
 
@@ -28,16 +35,15 @@ typedef unsigned int uint;
  */
 typedef struct article_root {
 	struct database db;
-	struct database comments;
 	char *dir;
 } article_root;
 
 
 typedef struct article_comment {
-	uint32_t id;
+	char   *body;
+	list   replies;
 	uint32_t reply_to;
-	char *body;
-	char author[ARTICLE_AUTHOR_LEN + 1];
+	char   author[ARTICLE_AUTHOR_LEN + 1];
 } article_comment;
 
 
@@ -65,7 +71,7 @@ int article_get(article_root *root, article **dest, const char *uri);
 /*
  * Get the comments by an article
  */
-int article_get_comments(article_root *root, article_comment **dest, article *art);
+int article_get_comments(article_root *root, list *dest, const char *uri);
 
 /*
  * Frees memory and stores any changes to the database
