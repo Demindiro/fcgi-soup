@@ -4,7 +4,6 @@
 
 #include <sys/stat.h>
 #include <stdint.h>
-#include "array.h"
 #include "list.h"
 
 
@@ -30,7 +29,7 @@ struct date {
 };
 
 typedef struct art_root {
-	array articles;
+	list  articles;
 	char *dir;
 } *art_root;
 

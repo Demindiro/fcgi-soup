@@ -228,10 +228,7 @@ art_root art_load(const char *path)
 	}
 	fclose(f);
 	prev->next = NULL;
-	article a;
-	list_get(arts, 0, &a);
-	root->articles = array_from(list_to_array(arts), arts->size, arts->count);
-	list_free(arts);
+	root->articles = arts;
 
 	return root;
 }
@@ -240,15 +237,15 @@ art_root art_load(const char *path)
 void art_free(art_root root)
 {
 	free(root->dir);
-	for (size_t i = 0; i < root->articles->len; i++) {
-		article a;
-		array_get(root->articles, i, &a);
+	article a;
+	size_t i = 0;
+	while (list_iter(root->articles, &i, &a)) {
 		free(a->title);
 		free(a->author);
 		free(a->file);
 		free(a->uri);
 	}
-	array_free(root->articles);
+	list_free(root->articles);
 	free(root);
 }
 
@@ -258,11 +255,10 @@ void art_free(art_root root)
 static list art_get_between_times(art_root root, struct date min, struct date max)
 {
 	list arts = list_create(sizeof(article));
-	for (size_t i = 0; i < root->articles->len; i++) {
-		article a;
-		array_get(root->articles, i, &a);
-		struct date d = a->date;
-		if (min.num <= d.num && d.num < max.num)
+	article a;
+	size_t i = 0;
+	while (list_iter(root->articles, &i, &a)) {
+		if (min.num <= a->date.num && a->date.num < max.num)
 			list_add(arts, &a);
 	}
 	return arts;
@@ -355,9 +351,9 @@ list art_get(art_root root, const char *uri) {
 		article *arts = malloc(sizeof(*arts));
 		article  art  = arts[0] = calloc(1, sizeof(*art));
 
-		for (size_t i = 0; i < root->articles->len; i++) {
-			article a;
-			array_get(root->articles, i, &a);
+		article a;
+		size_t i = 0;
+		while (list_iter(root->articles, &i, &a)) {
 			if (strcmp(a->uri, uri) == 0) {
 				list l = list_create(sizeof(a));
 				list_add(l, &a);
