@@ -1,3 +1,4 @@
+*.swp
 www/
 *.dSYM/
 a.out
