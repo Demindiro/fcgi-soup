@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
+#include "string.h"
 
 int buf_write(void *pbuf, size_t *index, size_t *size, const void *src, size_t count) {
 	void **buf = pbuf;
@@ -17,11 +18,13 @@ int buf_write(void *pbuf, size_t *index, size_t *size, const void *src, size_t c
 } 
 
 char *string_copy(const char *src) {
-	size_t l = strlen(src);
-	char *cp = malloc(l + 1);
+	return mem_copy(src, strlen(src) + 1);
+}
+
+char *mem_copy(const char *src, size_t len) {
+	char *cp = malloc(len);
 	if (cp == NULL)
 		return NULL;
-	memcpy(cp, src, l);
-	cp[l] = 0;
+	memcpy(cp, src, len);
 	return cp;
 }

@@ -3,28 +3,9 @@
 
 
 #include <sys/stat.h>
-#include "db.h"
+#include <stdint.h>
+#include "array.h"
 #include "list.h"
-
-
-#define ART_URI_LEN      64
-#define ART_FILE_LEN     256
-#define ART_DATE_LEN     4
-#define ART_AUTHOR_LEN   64
-#define ART_TITLE_LEN    64
-
-#define ART_URI_FIELD    0
-#define ART_FILE_FIELD   1
-#define ART_DATE_FIELD   2
-#define ART_AUTHOR_FIELD 3
-#define ART_TITLE_FIELD  4
-
-#define ART_COMM_ID_FIELD     0
-#define ART_COMM_AUTHOR_FIELD 1
-#define ART_COMM_DATE_FIELD   2
-#define ART_COMM_INDEX_FIELD  3
-#define ART_COMM_LENGTH_FIELD 4
-#define ART_COMM_REPLY_FIELD  5
 
 
 typedef unsigned int uint;
@@ -34,37 +15,48 @@ typedef unsigned int uint;
  * Each entry contains the URI, the file path, the date of submission, the
  * author's name and the title.
  */
+
+struct date {
+	union {
+		struct {
+			uint8_t  min;
+			uint8_t  hour;
+			uint8_t  day;
+			uint8_t  month;
+			uint32_t year;
+		};
+		uint64_t num;
+	};
+};
+
 typedef struct art_root {
-	struct database db;
+	array articles;
 	char *dir;
 } *art_root;
 
-
-typedef struct art_comment {
-	uint32_t id;
-	char   *body;
-	list   replies;
-	uint32_t reply_to;
-	uint32_t date;
-	char   author[ART_AUTHOR_LEN + 1];
-} *art_comment;
+typedef struct comment {
+	char        *body;
+	list         replies;
+	struct date  date;
+	char        *author;
+} *comment;
 
 
 typedef struct article {
-	char uri   [ART_URI_LEN    + 1];
-	char file  [ART_FILE_LEN*2 + 1];
-	uint32_t date;
-	char author[ART_AUTHOR_LEN + 1];
-	char title [ART_TITLE_LEN  + 1];
-	char next  [ART_URI_LEN    + 1];
-	char prev  [ART_URI_LEN    + 1];
+	char           *uri;
+	char           *file;
+	struct date     date;
+	char           *author;
+	char           *title;
+	struct article *next;
+	struct article *prev;
 } *article;
 
 
 /*
  * Loads or creates a new article database for the given path.
  */
-art_root art_init(const char *path);
+art_root art_load(const char *path);
 
 /*
  * Get the comments by an article
@@ -85,7 +77,7 @@ void art_free(art_root root);
  * Looks an article up for the given URI and returns it contents if found,
  * otherwise it returns NULL.
  */
-article *art_get(art_root root, size_t *count, const char *uri);
+list art_get(art_root root, const char *uri);
 
 /*
  * Parse a date in the following format:
@@ -95,11 +87,5 @@ article *art_get(art_root root, size_t *count, const char *uri);
  * - 11 bits for the hour and minute
  */
 uint32_t format_date(uint year, uint month, uint day, uint hour, uint minute);
-
-/*
- * Converts a date to a string. The default format is YYYY-MM-DD hh:mm
- */
-int date_to_str(char *buf, uint32_t date);
-
 
 #endif

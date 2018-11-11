@@ -80,6 +80,14 @@ static int print_error() {
 }
 
 
+static char *date_to_str(struct date d)
+{
+	static char buf[64];
+	snprintf(buf, sizeof(buf), "%d-%d-%d %d:%d", d.year, d.month, d.day, d.hour, d.min);
+	return buf;
+}
+
+
 static template load_temp(char *file)
 {
 	int fd = open(file, O_RDONLY);
@@ -112,7 +120,7 @@ static int setup()
             comment_temp == NULL ||
 	      entry_temp == NULL)
 		return -1;
-	blog_root = art_init("blog");
+	blog_root = art_load("blog");
 	return blog_root == NULL ? -1 : 1;
 }
 
@@ -136,7 +144,7 @@ static int set_art_dict(dict d, article art, int flags) {
 	}
 
 	char datestr[64];
-	date_to_str(datestr, art->date);
+	
 
 	dict_set(d, "URI"   , art->uri   );
 	dict_set(d, "DATE"  , datestr    );
@@ -146,19 +154,19 @@ static int set_art_dict(dict d, article art, int flags) {
 	return 0;
 }
 
-static char *render_comment(art_comment comment)
+static char *render_comment(comment c)
 {
-	char buf[64];
-	date_to_str(buf, comment->date);
 	dict d = dict_create();
-	dict_set(d, "AUTHOR", comment->author);
-	dict_set(d, "DATE"  , buf);
-	dict_set(d, "BODY"  , comment->body);
-	if (comment->replies->count > 0) {
+	dict_set(d, "AUTHOR", c->author);
+	dict_set(d, "DATE"  , date_to_str(c->date));
+	dict_set(d, "BODY"  , c->body);
+	if (c->replies->count > 0) {
 		size_t size = 256, index = 0;
 		char *buf = malloc(size);
-		for (size_t i = 0; i < comment->replies->count; i++) {
-			char *b = render_comment(*(art_comment *)list_get(comment->replies, i));
+		for (size_t i = 0; i < c->replies->count; i++) {
+			comment d;
+			list_get(c->replies, i, &d);
+			char *b = render_comment(d);
 			buf_write(&buf, &index, &size, b, strlen(b));
 			free(b);
 		}
@@ -179,7 +187,9 @@ static char *get_comments(art_root root, const char *uri)
 	size_t size = 256, index = 0;
 	char *buf = malloc(size);
 	for (size_t i = 0; i < ls->count; i++) {
-		char *b = render_comment(*(art_comment *)list_get(ls, i));
+		comment c;
+		list_get(ls, i, &c);
+		char *b = render_comment(c);
 		buf_write(&buf, &index, &size, b, strlen(b));
 		free(b);
 	}
@@ -208,33 +218,27 @@ int main()
 
 		if (strncmp("blog", uri, 4) == 0 && (uri[4] == '/' || uri[4] == 0)) {
 			char *nuri = uri + (uri[4] == '/' ? 5 : 4);
-			size_t count;
-			article *arts = art_get(blog_root, &count, nuri);
-			if (count == -1) {
+			list arts = art_get(blog_root, nuri);
+			if (arts == NULL) {
 				print_error();
 				continue;
 			}
 			char *body;
 			dict d = dict_create();
-			if (count == 1) {
-				if (set_art_dict(d, arts[0], 0x1) < 0) {
+			if (arts->count == 1) {
+				article a;
+				list_get(arts, 0, &a);
+				if (set_art_dict(d, a, 0x1) < 0) {
 					print_error();
 					continue;
 				}
-				size_t dummy;
-				if (arts[0]->prev[0] != 0) {
-					article *art = art_get(blog_root, &dummy, arts[0]->prev);
-					dict_set(d, "PREV_URI"  , art[0]->uri  );
-					dict_set(d, "PREV_TITLE", art[0]->title);
-					free(*art);
-					free(art);
+				if (a->prev != NULL) {
+					dict_set(d, "PREV_URI"  , a->prev->uri  );
+					dict_set(d, "PREV_TITLE", a->prev->title);
 				}
-				if (arts[0]->next[0] != 0) {
-					article *art = art_get(blog_root, &dummy, arts[0]->next);
-					dict_set(d, "NEXT_URI"  , art[0]->uri  );
-					dict_set(d, "NEXT_TITLE", art[0]->title);
-					free(*art);
-					free(art);
+				if (a->next != NULL) {
+					dict_set(d, "NEXT_URI"  , a->next->uri  );
+					dict_set(d, "NEXT_TITLE", a->next->title);
 				}
 				char *b = get_comments(blog_root, nuri);
 				dict_set(d, "COMMENTS", b);
@@ -243,8 +247,10 @@ int main()
 			} else {
 				size_t size = 0x1000, index = 0;
 				body = malloc(size);
-				for (size_t i = 0; i < count; i++) {
-					if (set_art_dict(d, arts[i], 0) < 0) {
+				for (size_t i = 0; i < arts->count; i++) {
+					article c;
+					list_get(arts, i, &c);
+					if (set_art_dict(d, c, 0) < 0) {
 						print_error();
 						goto error;
 					}
@@ -263,9 +269,7 @@ int main()
 					/* TODO */;
 			}
 			dict_free(d);
-			for (size_t i = 0; i < count; i++)
-				free(arts[i]);			
-			free(arts);
+			list_free(arts);
 			dict_set(md, "BODY", body);
 			free(body);
 		} else {
