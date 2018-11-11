@@ -42,8 +42,9 @@ static comment parse_comment(char *ptr, size_t len, size_t *reply_to)
 	char *p = ptr, *s = ptr;
 	while (*ptr != '\n')
 		ptr++;
-	*(ptr++) = 0;
+	*ptr = 0;
 	c->author = string_copy(p);
+	ptr++;
 
 	p = ptr;
 	while (*ptr != '\n')
@@ -59,7 +60,9 @@ static comment parse_comment(char *ptr, size_t len, size_t *reply_to)
 
 	c->body = malloc(len - (ptr - s) + 1);
 	memcpy(c->body, ptr, len - (ptr - s));
-	c->body[len - (ptr - s)] = 9;
+	c->body[len - (ptr - s)] = 0;
+
+	c->replies = list_create(sizeof(c));
 
 	return c;
 }
@@ -93,15 +96,19 @@ list art_get_comments(art_root root, const char *name)
 
 	list cs = list_create(sizeof(comment));
 	list rs = list_create(sizeof(size_t ));
+	ptr = buf;
 	while (ptr - buf < statbuf.st_size) {
 		char *p = ptr;
 		while (1) {
 			if (*ptr == '\n') {
 				ptr++;
-				if (*ptr == '\n')
-					break;
+				if (*ptr == '\n') {
+					ptr++;
+					if (*ptr == '\n')
+						break;
+				}
 			}
-			if (ptr - buf < statbuf.st_size)
+			if (ptr - buf >= statbuf.st_size)
 				break;
 			ptr++;
 		}
