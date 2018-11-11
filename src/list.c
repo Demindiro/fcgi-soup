@@ -63,12 +63,22 @@ int list_set(list ls, size_t index, void *item)
 }
 
 
-void *list_get(list ls, size_t index)
+int list_get(list ls, size_t index, void *dest)
 {
 	if (ls->count <= index)
-		return NULL;
-	return ls->_data + (index * ls->size);
+		return -1;
+	memcpy(dest, ls->_data + (index * ls->size), ls->size);
+	return 0;
 }
+
+
+int list_iter(list ls, size_t *index, void *dest)
+{
+	int r = list_get(ls, *index, dest) + 1;
+	(*index)++;
+	return r;
+}
+
 
 void *list_to_array(list ls)
 {

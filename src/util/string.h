@@ -5,4 +5,6 @@ int buf_write(void *pbuf, size_t *index, size_t *size, const void *src, size_t c
 
 char *string_copy(const char *src);
 
+char *mem_copy(const char *src, size_t len);
+
 #endif
