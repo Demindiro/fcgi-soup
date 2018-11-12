@@ -100,3 +100,14 @@ int dict_set(dict d, const char *key, const char *value)
 	}
 	return 0;
 }
+
+
+int dict_iter(dict d, const char **k, const char **v, size_t *i)
+{
+	if (d->count <= *i)
+		return 0;
+	*k = d->keys  [*i];
+	*v = d->values[*i];
+	(*i)++;
+	return 1;
+}

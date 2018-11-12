@@ -43,4 +43,7 @@ const char *dict_get(const dict d, const char *key);
  */
 int dict_set(dict d, const char *key, const char *value);
 
+
+int dict_iter(dict d, const char **key, const char **value, size_t *i);
+
 #endif
