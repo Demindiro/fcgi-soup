@@ -98,6 +98,8 @@ list art_get_comments(art_root root, const char *name)
 	list rs = list_create(sizeof(size_t ));
 	ptr = buf;
 	while (ptr - buf < statbuf.st_size) {
+		while (*ptr == '\n')
+			ptr++;
 		char *p = ptr;
 		while (1) {
 			if (*ptr == '\n') {
@@ -112,6 +114,8 @@ list art_get_comments(art_root root, const char *name)
 				break;
 			ptr++;
 		}
+		if (ptr - buf >= statbuf.st_size)
+			break;
 		size_t r;
 		comment c = parse_comment(p, ptr - p - 1, &r);
 		list_add(cs, &c);
@@ -211,7 +215,7 @@ found:;
 		}
 		ptr++;
 	}
-	for (size_t i = nc; i < 3; i++)
+	for (size_t i = nc; i <= 3; i++)
 		fputc('\n', f);
 	fclose(f);
 

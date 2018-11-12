@@ -289,7 +289,7 @@ static response handle_post(const char *uri)
 	comment c = malloc(sizeof(*c));
 	c->author = string_copy(dict_get(d, "author"));
 	c->body   = string_copy(dict_get(d, "body"));
-	const char *rt_str = dict_get(d, "reply_to");
+	const char *rt_str = dict_get(d, "reply-to");
 	size_t reply_to = rt_str != NULL ? atoi(rt_str) : -1;
 	time_t t = time(NULL);
 	struct tm *tm = localtime(&t);
