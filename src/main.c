@@ -147,11 +147,13 @@ static int set_art_dict(dict d, article art, int flags) {
 		free(buf);
 	}
 
-	char datestr[64];
-	
+	struct date t = art->date;
+	char buf[64];
+	snprintf(buf, sizeof(buf), "%d-%d-%d %d:%d",
+	         t.year, t.month, t.day, t.hour, t.min);
 
 	dict_set(d, "URI"   , art->uri   );
-	dict_set(d, "DATE"  , datestr    );
+	dict_set(d, "DATE"  , buf        );
 	dict_set(d, "TITLE" , art->title );
 	dict_set(d, "AUTHOR", art->author);
 
