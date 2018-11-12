@@ -188,15 +188,31 @@ found:;
 
 	FILE *f = fopen(buf, "a");
 	struct date d = c->date;
+
 	fprintf(f,
 	        "%s\n"
 	        "%u-%u-%u %u:%u\n"
-	        "%ld\n"
-	        "%s\n\n\n",
+	        "%ld\n",
 		c->author,
 	        d.year, d.month, d.day, d.hour, d.min,
-		reply_to,
-		c->body);
+		reply_to);
+	ptr = c->body;
+	int nc = 0;
+	while (*ptr != 0) {
+		switch (*ptr) {
+		default : fputc(*ptr  , f); nc = 0; break;
+		case '<': fputs("&lt;", f); nc = 0; break;
+		case '>': fputs("&gt;", f); nc = 0; break;
+		case '\n':
+			nc++;
+			if (nc <= 2)
+				fputc('\n', f);
+			break;
+		}
+		ptr++;
+	}
+	for (size_t i = nc; i < 3; i++)
+		fputc('\n', f);
 	fclose(f);
 
 	return 0;
