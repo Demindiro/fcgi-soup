@@ -13,7 +13,6 @@
 #include <unistd.h>
 #include <time.h>
 #include "util/string.h"
-#include "util/file.h"
 #include "../include/mime.h"
 #include "../include/art.h"
 #include "../include/dict.h"
@@ -378,13 +377,20 @@ static response handle_get(const char *uri)
 			uri = buf;
 		}
 
-		int fd = open(uri, O_RDONLY);
-		if (fd < 0)
-			return get_error_response(r, 500);
 		const char *mime = get_mime_type(uri);
 		dict_set(r->headers, "Content-Type", mime);
 		r->flags = (mime != NULL && strcmp(mime, "text/html") == 0) ? RESPONSE_USE_TEMPLATE : 0;
-		r->body = file_read(fd, statbuf.st_size);
+
+		FILE *f = fopen(uri, "r");
+		if (f == NULL)
+			return get_error_response(r, 500);
+		fseek(f, 0, SEEK_END);
+		size_t s = ftell(f);
+		fseek(f, 0, SEEK_SET);
+		r->body = malloc(s + 1);
+		fread(r->body, s, 1, f);
+		r->body[s] = 0;
+		fclose(f);
 	}
 	r->flags |= RESPONSE_USE_TEMPLATE;
 	return r;
