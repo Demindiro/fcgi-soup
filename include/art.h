@@ -67,6 +67,8 @@ list art_get_comments(art_root root, const char *uri);
  */
 void art_free_comments(list ls);
 
+int art_add_comment(art_root root, const char *uri, comment c, size_t reply_to);
+
 /*
  * Frees memory and stores any changes to the database
  */

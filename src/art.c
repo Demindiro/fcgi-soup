@@ -163,6 +163,46 @@ void art_free_comments(list ls)
 }
 
 
+int art_add_comment(art_root root, const char *uri, comment c, size_t reply_to)
+{
+	article a;
+	size_t i = 0;
+	while (list_iter(root->articles, &i, &a)) {
+		if (strcmp(a->uri, uri) == 0)
+			goto found;
+	}
+	return -1;
+
+found:;
+	char buf[256], *ptr = buf;
+	size_t l = strlen(root->dir);
+	memcpy(ptr, root->dir, l);
+	ptr += l;
+	l = sizeof("comments");
+	memcpy(ptr,"comments/", l);
+	ptr += l;
+	l = strlen(uri);
+	memcpy(ptr, uri, l);
+	ptr += l;
+	*ptr = 0;
+
+	FILE *f = fopen(buf, "a");
+	struct date d = c->date;
+	fprintf(f,
+	        "%s\n"
+	        "%u-%u-%u %u:%u\n"
+	        "%ld\n"
+	        "%s\n\n\n",
+		c->author,
+	        d.year, d.month, d.day, d.hour, d.min,
+		reply_to,
+		c->body);
+	fclose(f);
+
+	return 0;
+}
+
+
 /*
  * Root
  */

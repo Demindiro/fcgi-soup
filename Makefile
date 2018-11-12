@@ -8,6 +8,9 @@ mem = valgrind
 ifndef ROOT
 	ROOT = www
 endif
+ifndef METHOD
+	METHOD = GET
+endif
 
 
 build_debug:
@@ -18,10 +21,10 @@ build_release:
 
 
 run:
-	(cd $(ROOT); PATH_INFO=$(URI) $(proj_root)/build/soup)
+	(cd $(ROOT); METHOD=$(METHOD) PATH_INFO=$(URI) $(proj_root)/build/soup)
 
 run_db:
-	(cd $(ROOT); PATH_INFO=$(URI) $(db) $(DB_FLAGS) $(proj_root)/build/soup)
+	(cd $(ROOT); METHOD=$(METHOD) PATH_INFO=$(URI) $(db) $(DB_FLAGS) $(proj_root)/build/soup)
 
 run_mem:
-	(cd $(ROOT); PATH_INFO=$(URI) $(mem) $(DB_FLAGS) $(proj_root)/build/soup)
+	(cd $(ROOT); method=$(METHOD) PATH_INFO=$(URI) $(mem) $(DB_FLAGS) $(proj_root)/build/soup)
