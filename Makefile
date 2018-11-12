@@ -21,10 +21,10 @@ build_release:
 
 
 run:
-	(cd $(ROOT); METHOD=$(METHOD) PATH_INFO=$(URI) $(proj_root)/build/soup)
+	(cd $(ROOT); REQUEST_METHOD=$(METHOD) PATH_INFO=$(URI) $(proj_root)/build/soup)
 
 run_db:
-	(cd $(ROOT); METHOD=$(METHOD) PATH_INFO=$(URI) $(db) $(DB_FLAGS) $(proj_root)/build/soup)
+	(cd $(ROOT); REQUEST_METHOD=$(METHOD) PATH_INFO=$(URI) $(db) $(DB_FLAGS) $(proj_root)/build/soup)
 
 run_mem:
-	(cd $(ROOT); method=$(METHOD) PATH_INFO=$(URI) $(mem) $(DB_FLAGS) $(proj_root)/build/soup)
+	(cd $(ROOT); REQUEST_METHOD=$(METHOD) PATH_INFO=$(URI) $(mem) $(DB_FLAGS) $(proj_root)/build/soup)

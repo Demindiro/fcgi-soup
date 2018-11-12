@@ -403,7 +403,7 @@ int main()
 		if (uri[0] == '/')
 			uri++;
 
-		char *method = getenv("METHOD");
+		char *method = getenv("REQUEST_METHOD");
 		if (method == NULL)
 			return 1;
 
