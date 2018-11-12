@@ -393,6 +393,7 @@ static response handle_get(const char *uri)
 		fclose(f);
 	}
 	r->flags |= RESPONSE_USE_TEMPLATE;
+	r->status = 200;
 	return r;
 }
 
