@@ -199,6 +199,7 @@ static char *get_comments(art_root root, const char *uri)
 		buf_write(&buf, &index, &size, b, strlen(b));
 		free(b);
 	}
+	buf_write(&buf, &index, &size, "\0", 1);
 	art_free_comments(ls);
 	return buf;
 }
