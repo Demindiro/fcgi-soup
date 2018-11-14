@@ -247,6 +247,7 @@ static char *copy_query_field(const char **pptr, char delim)
 		ptr++;
 	}
 	buf_write(&v, &i, &s, p, ptr - p);
+	buf_write(&v, &i, &s, "\0", 1);
 
 	*pptr = ptr + 1;
 	return v;
@@ -285,7 +286,8 @@ static response handle_post(const char *uri)
 	}
 
 	char *body = malloc(0xFFFF);
-	fread(body, 1, 0xFFFF, stdin);
+	size_t end = fread(body, 1, 0xFFFF, stdin);
+	body[end] = 0;
 
 	dict d = parse_query(body);
 	comment c = malloc(sizeof(*c));
