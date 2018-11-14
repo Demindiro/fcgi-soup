@@ -73,6 +73,7 @@ static const char *get_error_msg(int status)
 static response get_error_response(response r, int status) {
 	dict d = dict_create();
 	r->status = status;
+	r->flags  = RESPONSE_USE_TEMPLATE;
 	char buf[64];
 	snprintf(buf, sizeof(buf), "%d", status);
 	dict_set(d, "STATUS" , buf);
@@ -317,6 +318,7 @@ static response handle_get(const char *uri)
 {
 	response r = response_create();
 	if (strncmp("blog", uri, 4) == 0 && (uri[4] == '/' || uri[4] == 0)) {
+		r->flags = RESPONSE_USE_TEMPLATE;
 		const char *nuri = uri + (uri[4] == '/' ? 5 : 4);
 		list arts = art_get(blog_root, nuri);
 		if (arts == NULL)
@@ -367,10 +369,8 @@ static response handle_get(const char *uri)
 		struct stat statbuf;
 		if (uri[0] == 0)
 			uri = "index.html";
-		if (stat(uri, &statbuf) < 0) {	
-			r->status = 404;
-			return r;
-		}
+		if (stat(uri, &statbuf) < 0)
+			return get_error_response(r, 404);
 		char buf[256];
 		if (S_ISDIR(statbuf.st_mode)) {
 			size_t l = strlen(uri);
@@ -394,7 +394,6 @@ static response handle_get(const char *uri)
 		r->body[s] = 0;
 		fclose(f);
 	}
-	r->flags |= RESPONSE_USE_TEMPLATE;
 	r->status = 200;
 	return r;
 }
