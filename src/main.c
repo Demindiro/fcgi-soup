@@ -162,10 +162,13 @@ static int set_art_dict(dict d, article art, int flags) {
 
 static char *render_comment(comment c)
 {
+	char idbuf[64];
+	snprintf(idbuf, sizeof(idbuf), "%d", c->id);
 	dict d = dict_create();
 	dict_set(d, "AUTHOR", c->author);
 	dict_set(d, "DATE"  , date_to_str(c->date));
 	dict_set(d, "BODY"  , c->body);
+	dict_set(d, "ID"    , idbuf);
 	if (c->replies->count > 0) {
 		size_t size = 256, index = 0;
 		char *buf = malloc(size);

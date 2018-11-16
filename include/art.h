@@ -36,6 +36,8 @@ typedef struct art_root {
 typedef struct comment {
 	char        *body;
 	list         replies;
+	int          id;
+	int          reply_to;
 	struct date  date;
 	char        *author;
 } *comment;
