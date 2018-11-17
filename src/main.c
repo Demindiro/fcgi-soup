@@ -13,7 +13,6 @@
 #include <unistd.h>
 #include <time.h>
 #include "util/string.h"
-#include "util/file.h"
 #include "../include/mime.h"
 #include "../include/art.h"
 #include "../include/dict.h"
@@ -74,6 +73,7 @@ static const char *get_error_msg(int status)
 static response get_error_response(response r, int status) {
 	dict d = dict_create();
 	r->status = status;
+	r->flags  = RESPONSE_USE_TEMPLATE;
 	char buf[64];
 	snprintf(buf, sizeof(buf), "%d", status);
 	dict_set(d, "STATUS" , buf);
@@ -147,11 +147,13 @@ static int set_art_dict(dict d, article art, int flags) {
 		free(buf);
 	}
 
-	char datestr[64];
-	
+	struct date t = art->date;
+	char buf[64];
+	snprintf(buf, sizeof(buf), "%d-%d-%d %d:%d",
+	         t.year, t.month, t.day, t.hour, t.min);
 
 	dict_set(d, "URI"   , art->uri   );
-	dict_set(d, "DATE"  , datestr    );
+	dict_set(d, "DATE"  , buf        );
 	dict_set(d, "TITLE" , art->title );
 	dict_set(d, "AUTHOR", art->author);
 
@@ -160,10 +162,13 @@ static int set_art_dict(dict d, article art, int flags) {
 
 static char *render_comment(comment c)
 {
+	char idbuf[64];
+	snprintf(idbuf, sizeof(idbuf), "%d", c->id);
 	dict d = dict_create();
 	dict_set(d, "AUTHOR", c->author);
 	dict_set(d, "DATE"  , date_to_str(c->date));
 	dict_set(d, "BODY"  , c->body);
+	dict_set(d, "ID"    , idbuf);
 	if (c->replies->count > 0) {
 		size_t size = 256, index = 0;
 		char *buf = malloc(size);
@@ -190,13 +195,14 @@ static char *get_comments(art_root root, const char *uri)
 		return NULL;
 	size_t size = 256, index = 0;
 	char *buf = malloc(size);
-	for (size_t i = 0; i < ls->count; i++) {
+	for (size_t i = ls->count - 1; i != -1; i--) {
 		comment c;
 		list_get(ls, i, &c);
 		char *b = render_comment(c);
 		buf_write(&buf, &index, &size, b, strlen(b));
 		free(b);
 	}
+	buf_write(&buf, &index, &size, "\0", 1);
 	art_free_comments(ls);
 	return buf;
 }
@@ -207,14 +213,14 @@ static char hex_to_char(const char *s)
 	unsigned char c;
 	if ('0' <= *s && *s <= '9')
 		c = (*s - '0') << 4;
-	else if ('A' < *s && *s < 'F')
+	else if ('A' <= *s && *s <= 'F')
 		c = (*s - 'A' + 10) << 4;
 	else
 		c = (*s - 'a' + 10) << 4;
 	s++;
 	if ('0' <= *s && *s <= '9')
 		c += (*s - '0');
-	else if ('A' < *s && *s < 'F')
+	else if ('A' <= *s && *s <= 'F')
 		c += (*s - 'A' + 10);
 	else
 		c += (*s - 'a' + 10);
@@ -245,6 +251,7 @@ static char *copy_query_field(const char **pptr, char delim)
 		ptr++;
 	}
 	buf_write(&v, &i, &s, p, ptr - p);
+	buf_write(&v, &i, &s, "\0", 1);
 
 	*pptr = ptr + 1;
 	return v;
@@ -283,7 +290,8 @@ static response handle_post(const char *uri)
 	}
 
 	char *body = malloc(0xFFFF);
-	fread(body, 1, 0xFFFF, stdin);
+	size_t end = fread(body, 1, 0xFFFF, stdin);
+	body[end] = 0;
 
 	dict d = parse_query(body);
 	comment c = malloc(sizeof(*c));
@@ -313,6 +321,7 @@ static response handle_get(const char *uri)
 {
 	response r = response_create();
 	if (strncmp("blog", uri, 4) == 0 && (uri[4] == '/' || uri[4] == 0)) {
+		r->flags = RESPONSE_USE_TEMPLATE;
 		const char *nuri = uri + (uri[4] == '/' ? 5 : 4);
 		list arts = art_get(blog_root, nuri);
 		if (arts == NULL)
@@ -363,10 +372,8 @@ static response handle_get(const char *uri)
 		struct stat statbuf;
 		if (uri[0] == 0)
 			uri = "index.html";
-		if (stat(uri, &statbuf) < 0) {	
-			r->status = 404;
-			return r;
-		}
+		if (stat(uri, &statbuf) < 0)
+			return get_error_response(r, 404);
 		char buf[256];
 		if (S_ISDIR(statbuf.st_mode)) {
 			size_t l = strlen(uri);
@@ -375,15 +382,22 @@ static response handle_get(const char *uri)
 			uri = buf;
 		}
 
-		int fd = open(uri, O_RDONLY);
-		if (fd < 0)
-			return get_error_response(r, 500);
 		const char *mime = get_mime_type(uri);
 		dict_set(r->headers, "Content-Type", mime);
 		r->flags = (mime != NULL && strcmp(mime, "text/html") == 0) ? RESPONSE_USE_TEMPLATE : 0;
-		r->body = file_read(fd, statbuf.st_size);
+
+		FILE *f = fopen(uri, "r");
+		if (f == NULL)
+			return get_error_response(r, 500);
+		fseek(f, 0, SEEK_END);
+		size_t s = ftell(f);
+		fseek(f, 0, SEEK_SET);
+		r->body = malloc(s + 1);
+		fread(r->body, s, 1, f);
+		r->body[s] = 0;
+		fclose(f);
 	}
-	r->flags |= RESPONSE_USE_TEMPLATE;
+	r->status = 200;
 	return r;
 }
 

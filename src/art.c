@@ -11,7 +11,6 @@
 #include <unistd.h>
 #include <time.h>
 #include "util/string.h"
-#include "util/file.h"
 #include "../include/dict.h"
 #include "../include/temp.h"
 
@@ -36,7 +35,7 @@ static struct date parse_date(const char *str)
  * Comments
  */
 
-static comment parse_comment(char *ptr, size_t len, size_t *reply_to)
+static comment parse_comment(char *ptr, size_t len)
 {
 	comment c = malloc(sizeof(*c));
 	char *p = ptr, *s = ptr;
@@ -56,7 +55,7 @@ static comment parse_comment(char *ptr, size_t len, size_t *reply_to)
 	while (*ptr != '\n')
 		ptr++;
 	*(ptr++) = 0;
-	sscanf(p, "%ld", reply_to);
+	sscanf(p, "%d", &c->reply_to);
 
 	c->body = malloc(len - (ptr - s) + 1);
 	memcpy(c->body, ptr, len - (ptr - s));
@@ -86,18 +85,18 @@ list art_get_comments(art_root root, const char *name)
 	ptr += l;
 	*ptr = 0;
 
-	int fd = open(file, O_RDONLY);
-	if (fd == -1)
-		goto error;
-	struct stat statbuf;
-	fstat(fd, &statbuf);
-	char *buf = file_read(fd, statbuf.st_size);
-	close(fd);
+	FILE *f = fopen(file, "r");
+	fseek(f, 0, SEEK_END);
+	size_t s = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	char *buf = malloc(s + 1);
+	fread(buf, 1, s, f);
+	buf[s] = 0;
+	fclose(f);
 
 	list cs = list_create(sizeof(comment));
-	list rs = list_create(sizeof(size_t ));
 	ptr = buf;
-	while (ptr - buf < statbuf.st_size) {
+	for (int id = 0; ptr - buf < s; id++) {
 		while (*ptr == '\n')
 			ptr++;
 		char *p = ptr;
@@ -110,31 +109,29 @@ list art_get_comments(art_root root, const char *name)
 						break;
 				}
 			}
-			if (ptr - buf >= statbuf.st_size)
+			if (ptr - buf >= s)
 				break;
 			ptr++;
 		}
-		if (ptr - buf >= statbuf.st_size)
+		if (ptr - buf >= s)
 			break;
-		size_t r;
-		comment c = parse_comment(p, ptr - p - 1, &r);
+		comment c = parse_comment(p, ptr - p - 1);
+		c->id = id;
 		list_add(cs, &c);
-		list_add(rs, &r);
 		ptr++;
 	}
 	free(buf);
 
 	ls = list_create(sizeof(comment));
 	comment c;
-	size_t r;
-	size_t i = 0, j = i;
-	while (list_iter(cs, &i, &c) && list_iter(rs, &j, &r)) {
+	size_t i = 0;
+	while (list_iter(cs, &i, &c)) {
 		list l;
-		if (r == -1) {
+		if (c->reply_to == -1) {
 			l = ls;
 		} else {
 			comment d;
-			list_get(cs, r, &d);
+			list_get(cs, c->reply_to, &d);
 			l = d->replies;
 		}
 		if (list_add(l, &c) < 0)
