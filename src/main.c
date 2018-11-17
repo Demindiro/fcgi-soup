@@ -213,14 +213,14 @@ static char hex_to_char(const char *s)
 	unsigned char c;
 	if ('0' <= *s && *s <= '9')
 		c = (*s - '0') << 4;
-	else if ('A' < *s && *s < 'F')
+	else if ('A' <= *s && *s <= 'F')
 		c = (*s - 'A' + 10) << 4;
 	else
 		c = (*s - 'a' + 10) << 4;
 	s++;
 	if ('0' <= *s && *s <= '9')
 		c += (*s - '0');
-	else if ('A' < *s && *s < 'F')
+	else if ('A' <= *s && *s <= 'F')
 		c += (*s - 'A' + 10);
 	else
 		c += (*s - 'a' + 10);
