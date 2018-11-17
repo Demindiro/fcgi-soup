@@ -195,7 +195,7 @@ static char *get_comments(art_root root, const char *uri)
 		return NULL;
 	size_t size = 256, index = 0;
 	char *buf = malloc(size);
-	for (size_t i = 0; i < ls->count; i++) {
+	for (size_t i = ls->count - 1; i != -1; i--) {
 		comment c;
 		list_get(ls, i, &c);
 		char *b = render_comment(c);
