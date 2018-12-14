@@ -1,9 +1,9 @@
 #include "../include/mime.h"
 #include <stdlib.h>
-#include "../include/dict.h"
+#include "dict.h"
 
 
-static dict d;
+static cinja_dict d;
 
 
 static const char *mime_map[] = {
@@ -16,22 +16,17 @@ static const size_t mime_map_count = sizeof(mime_map) / sizeof(*mime_map) / 2;
 __attribute__((constructor))
 static void init()
 {
-	d = dict_create();
+	d = cinja_dict_create();
 	for (int i = 0; i < mime_map_count; i++) {
-		if (dict_set(d, mime_map[i*2], mime_map[i*2 + 1]) < 0)
+		if (cinja_dict_set(d, string_create(mime_map[i*2]), string_create(mime_map[i*2 + 1])) < 0)
 			abort();
 	}
 }
 
-__attribute__((destructor))
-static void destroy()
-{
-	dict_free(d);
-}
 
-const char *get_mime_type(const char *filename)
+const string get_mime_type(const string filename)
 {
-	const char *ptr = filename, *lptr = NULL;
+	const char *ptr = filename->buf, *lptr = NULL;
 	while (*ptr != 0) {
 		if (*ptr == '.')
 			lptr = ptr + 1;
@@ -39,5 +34,8 @@ const char *get_mime_type(const char *filename)
 	}
 	if (lptr == NULL || *lptr == 0)
 		return NULL;
-	return dict_get(d, lptr);
+	string s = string_create(lptr);
+	string r = cinja_dict_get(d, s).value;
+	free(s);
+	return r;
 }

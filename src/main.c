@@ -12,26 +12,25 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <time.h>
-#include "util/string.h"
 #include "../include/mime.h"
 #include "../include/art.h"
 #include "../include/dict.h"
-#include "../include/temp.h"
+#include "cinja.h"
 
 
 #define TEMPLATE_DIR "templates/"
 #define MAIN_TEMP    TEMPLATE_DIR "main.html"
 #define ERROR_TEMP   TEMPLATE_DIR "error.html"
 #define ARTICLE_TEMP TEMPLATE_DIR "article.html"
-#define ENTRY_TEMP   TEMPLATE_DIR "article_entry.html"
+#define ENTRY_TEMP   TEMPLATE_DIR "article_list.html"
 #define COMMENT_TEMP TEMPLATE_DIR "comment.html"
 
 
-template main_temp;
-template error_temp;
-template art_temp;
-template entry_temp;
-template comment_temp;
+cinja_template main_temp;
+cinja_template error_temp;
+cinja_template art_temp;
+cinja_template entry_temp;
+cinja_template comment_temp;
 art_root blog_root;
 
 
@@ -40,8 +39,8 @@ art_root blog_root;
 
 #define RESPONSE_USE_TEMPLATE 0x1
 typedef struct response {
-	dict headers;
-	char *body;
+	cinja_dict headers;
+	string body;
 	int status;
 	int flags;
 } *response;
@@ -50,7 +49,7 @@ typedef struct response {
 static response response_create()
 {
 	response r = malloc(sizeof(*r));
-	r->headers = dict_create();
+	r->headers = cinja_dict_create();
 	r->body    = NULL;
 	r->flags   = 0;
 	return r;
@@ -71,40 +70,30 @@ static const char *get_error_msg(int status)
 
 
 static response get_error_response(response r, int status) {
-	dict d = dict_create();
+	cinja_dict d = cinja_dict_create();
 	r->status = status;
 	r->flags  = RESPONSE_USE_TEMPLATE;
 	char buf[64];
 	snprintf(buf, sizeof(buf), "%d", status);
-	dict_set(d, "STATUS" , buf);
-	dict_set(d, "MESSAGE", get_error_msg(r->status)); 
-	r->body = temp_render(error_temp, d);
-	dict_free(d);
+	cinja_dict_set(d, string_create("STATUS" ), string_create(buf));
+	cinja_dict_set(d, string_create("MESSAGE"), string_create(get_error_msg(r->status))); 
+	r->body = cinja_render(error_temp, d);
+	cinja_dict_free(d);
 	return r;
 }
 
 
-static char *date_to_str(struct date d)
+static string date_to_str(struct date d)
 {
 	static char buf[64];
 	snprintf(buf, sizeof(buf), "%d-%d-%d %d:%d", d.year, d.month, d.day, d.hour, d.min);
-	return buf;
+	return string_create(buf);
 }
 
 
-static template load_temp(char *file)
+static cinja_template load_temp(char *file)
 {
-	int fd = open(file, O_RDONLY);
-	if (fd < 0)
-		return_error(NULL, "Couldn't open '%s'", file);
-	struct stat statbuf;
-	if (fstat(fd, &statbuf) < 0)
-		return_error(NULL, "Couldn't get size of '%s'", file);
-	char buf[statbuf.st_size + 1];
-	if (read(fd, buf, statbuf.st_size) < 0)
-		return_error(NULL, "Couldn't read '%s'", file);
-	buf[statbuf.st_size] = 0;
-	template temp = temp_create(buf);
+	cinja_template temp = cinja_create_from_file(file);
 	if (temp == NULL)
 		return_error(NULL, "Couldn't create temp of '%s'", file);
 	return temp;
@@ -113,26 +102,28 @@ static template load_temp(char *file)
 
 static int setup()
 {
-	   main_temp = load_temp(   MAIN_TEMP);
-	  error_temp = load_temp(  ERROR_TEMP);
-	    art_temp = load_temp(ARTICLE_TEMP);
+	main_temp = load_temp(   MAIN_TEMP);
+	error_temp = load_temp(  ERROR_TEMP);
+	art_temp = load_temp(ARTICLE_TEMP);
 	comment_temp = load_temp(COMMENT_TEMP);
-	  entry_temp = load_temp(  ENTRY_TEMP);
+	entry_temp = load_temp(  ENTRY_TEMP);
 	if (   main_temp == NULL ||
-	      error_temp == NULL ||
-	        art_temp == NULL ||
-            comment_temp == NULL ||
-	      entry_temp == NULL)
+			error_temp == NULL ||
+			art_temp == NULL ||
+			comment_temp == NULL ||
+			entry_temp == NULL)
 		return -1;
-	blog_root = art_load("blog");
+	string s = string_create("blog");
+	blog_root = art_load(s);
+	free(s);
 	return blog_root == NULL ? -1 : 1;
 }
 
 
-static int set_art_dict(dict d, article art, int flags) {
+static int set_art_dict(cinja_dict d, article art, int flags) {
 	if (flags & 0x1) {
 		struct stat statbuf;
-		int fd = open(art->file, O_RDONLY);
+		int fd = open(art->file->buf, O_RDONLY);
 		if (fd < 0)
 			return -1;
 		fstat(fd, &statbuf);
@@ -143,68 +134,57 @@ static int set_art_dict(dict d, article art, int flags) {
 		}
 		read(fd, buf, statbuf.st_size);
 		buf[statbuf.st_size] = 0;
-		dict_set(d, "BODY", buf);
+		cinja_dict_set(d, string_create("BODY"), string_create(buf));
 		free(buf);
 	}
 
 	struct date t = art->date;
 	char buf[64];
 	snprintf(buf, sizeof(buf), "%d-%d-%d %d:%d",
-	         t.year, t.month, t.day, t.hour, t.min);
+			t.year, t.month, t.day, t.hour, t.min);
 
-	dict_set(d, "URI"   , art->uri   );
-	dict_set(d, "DATE"  , buf        );
-	dict_set(d, "TITLE" , art->title );
-	dict_set(d, "AUTHOR", art->author);
+	cinja_dict_set(d, string_create("URI"   ), art->uri);
+	cinja_dict_set(d, string_create("DATE"  ), string_create(buf));
+	cinja_dict_set(d, string_create("TITLE" ), art->title);
+	cinja_dict_set(d, string_create("AUTHOR"), art->author);
 
 	return 0;
 }
 
-static char *render_comment(comment c)
+static cinja_dict _comment_to_dict(comment c)
 {
 	char idbuf[64];
 	snprintf(idbuf, sizeof(idbuf), "%d", c->id);
-	dict d = dict_create();
-	dict_set(d, "AUTHOR", c->author);
-	dict_set(d, "DATE"  , date_to_str(c->date));
-	dict_set(d, "BODY"  , c->body);
-	dict_set(d, "ID"    , idbuf);
+	cinja_dict d = cinja_dict_create();
+	cinja_dict_set(d, string_create("AUTHOR"), c->author);
+	cinja_dict_set(d, string_create("DATE"  ), date_to_str(c->date));
+	cinja_dict_set(d, string_create("BODY"  ), c->body);
+	cinja_dict_set(d, string_create("ID"    ), string_create(idbuf));
 	if (c->replies->count > 0) {
-		size_t size = 256, index = 0;
-		char *buf = malloc(size);
+		cinja_list replies = cinja_list_create();
 		for (size_t i = 0; i < c->replies->count; i++) {
-			comment d;
-			list_get(c->replies, i, &d);
-			char *b = render_comment(d);
-			buf_write(&buf, &index, &size, b, strlen(b));
-			free(b);
+			comment d = cinja_list_get(c->replies, i).item;
+			cinja_list_add(replies, _comment_to_dict(d));
 		}
-		dict_set(d, "REPLIES", buf);
-		free(buf);
+		cinja_dict_set(d, string_create("REPLIES"), replies);
+		cinja_dict_set(d, string_create("comment"), comment_temp);
 	}
-	char *body = temp_render(comment_temp, d);
-	dict_free(d);
-	return body;
+	return d;
 }
 
 
-static char *get_comments(art_root root, const char *uri)
+static cinja_list get_comments(art_root root, const string uri)
 {
-	list ls = art_get_comments(root, uri);
+	cinja_list ls = art_get_comments(root, uri);
 	if (ls == NULL)
 		return NULL;
-	size_t size = 256, index = 0;
-	char *buf = malloc(size);
-	for (size_t i = ls->count - 1; i != -1; i--) {
-		comment c;
-		list_get(ls, i, &c);
-		char *b = render_comment(c);
-		buf_write(&buf, &index, &size, b, strlen(b));
-		free(b);
+	cinja_list comments = cinja_list_create();
+	for (size_t i = 0; i < ls->count; i++) {
+		comment c = cinja_list_get(ls, ls->count - i - 1).item;
+		cinja_list_add(comments, _comment_to_dict(c));
 	}
-	buf_write(&buf, &index, &size, "\0", 1);
 	art_free_comments(ls);
-	return buf;
+	return comments;
 }
 
 
@@ -228,64 +208,70 @@ static char hex_to_char(const char *s)
 }
 
 
-static char *copy_query_field(const char **pptr, char delim)
+static string copy_query_field(const char **pptr, char delim)
 {
 	const char *ptr = *pptr;
-	size_t s = 256, i = 0;
-	char *v = malloc(s);
+	size_t s = 4000, i = 0;
+	string v = malloc(sizeof(v->len) + s + 1);
+	if (v == NULL)
+		return NULL;
 
 	const char *p = ptr;
-	while (*ptr != delim && *ptr != 0) {
+	for (v->len = 0; *ptr != delim && *ptr != 0; v->len++) {
+		if (s <= i) {
+			string tmp = realloc(v, s * 3 / 2);
+			if (tmp == NULL) {
+				free(v);
+				return NULL;
+			}
+			v = tmp;
+			s = s * 3 / 2;
+		}
 		if (*ptr == '+' || *ptr == '%') {
-			buf_write(&v, &i, &s, p, ptr - p);
 			if (*ptr == '+') {
-				buf_write(&v, &i, &s, " ", 1);
+				v->buf[v->len] = ' ';
 			} else {
 				ptr++;
-				char c = hex_to_char(ptr);
-				buf_write(&v, &i, &s, &c, 1);
+				v->buf[v->len] = hex_to_char(ptr);
 				ptr++;
 			}
 			p = ptr + 1;
+		} else {
+			v->buf[v->len] = *ptr;
 		}
 		ptr++;
 	}
-	buf_write(&v, &i, &s, p, ptr - p);
-	buf_write(&v, &i, &s, "\0", 1);
+	v->buf[v->len] = 0;
 
 	*pptr = ptr + 1;
 	return v;
 }
 
 
-static dict parse_query(const char *q)
+static cinja_dict parse_query(const char *q)
 {
 	const char *ptr = q;
-	dict d = dict_create();
+	cinja_dict d = cinja_dict_create();
 	while (*ptr != 0) {
-		char *key = copy_query_field(&ptr, '=');
-		char *val = copy_query_field(&ptr, '&');
-		dict_set(d, key, val);
-		free(key);
-		free(val);
+		string key = copy_query_field(&ptr, '=');
+		string val = copy_query_field(&ptr, '&');
+		cinja_dict_set(d, key, val);
 	}
 	return d;
 }
 
 
-static response handle_post(const char *uri)
+static response handle_post(const string uri)
 {
-	const char *ptr = uri;
 	response r = response_create();
-	if (strncmp("blog/", ptr, 5) != 0) {
+	if (strncmp("blog/", uri->buf, 5) != 0) {
 		return get_error_response(r, 405);
 	}
-	ptr += 5;
-	if (*ptr == 0)
+	if (uri->buf[5] == 0)
 		return get_error_response(r, 405);
-	list ls = art_get(blog_root, ptr);
+	cinja_list ls = art_get(blog_root, string_create(uri->buf + 5));
 	if (ls->count != 1) {
-		list_free(ls);
+		cinja_list_free(ls);
 		return get_error_response(r, 405);
 	}
 
@@ -293,11 +279,11 @@ static response handle_post(const char *uri)
 	size_t end = fread(body, 1, 0xFFFF, stdin);
 	body[end] = 0;
 
-	dict d = parse_query(body);
+	cinja_dict d = parse_query(body);
 	comment c = malloc(sizeof(*c));
-	c->author = string_copy(dict_get(d, "author"));
-	c->body   = string_copy(dict_get(d, "body"));
-	const char *rt_str = dict_get(d, "reply-to");
+	c->author = string_copy(cinja_dict_get(d, string_create("author")).value);
+	c->body   = string_copy(cinja_dict_get(d, string_create("body")).value);
+	const char *rt_str = cinja_dict_get(d, string_create("reply-to")).value;
 	size_t reply_to = rt_str != NULL ? atoi(rt_str) : -1;
 	time_t t = time(NULL);
 	struct tm *tm = localtime(&t);
@@ -307,95 +293,107 @@ static response handle_post(const char *uri)
 	c->date.hour  = tm->tm_hour;
 	c->date.min   = tm->tm_min;
 
-	if (art_add_comment(blog_root, ptr, c, reply_to) < 0)
+	if (art_add_comment(blog_root, string_create(uri->buf + 5), c, reply_to) < 0)
 		return get_error_response(r, 500);
 
 	r->status = 302;
-	dict_set(r->headers, "Location", ptr);
+	cinja_dict_set(r->headers, string_create("Location"), string_create(uri->buf + 5));
 	r->body = calloc(1,1);
 	return r;
 }
 
 
-static response handle_get(const char *uri)
+static response handle_get(const string uri)
 {
 	response r = response_create();
-	if (strncmp("blog", uri, 4) == 0 && (uri[4] == '/' || uri[4] == 0)) {
+	if (strncmp("blog", uri->buf, 4) == 0 && (uri->buf[4] == '/' || uri->buf[4] == 0)) {
 		r->flags = RESPONSE_USE_TEMPLATE;
-		const char *nuri = uri + (uri[4] == '/' ? 5 : 4);
-		list arts = art_get(blog_root, nuri);
+		const string nuri = string_create(uri->buf + (uri->buf[4] == '/' ? 5 : 4));
+		cinja_list arts = art_get(blog_root, nuri);
 		if (arts == NULL)
 			return get_error_response(r, 404);
-		dict d = dict_create();
 		if (arts->count == 1) {
-			article a;
-			list_get(arts, 0, &a);
+			cinja_dict d = cinja_dict_create();
+			article a = cinja_list_get(arts, 0).item;
 			if (set_art_dict(d, a, 0x1) < 0)
-				return get_error_response(r, 405);
+				return get_error_response(r, 500);
 			if (a->prev != NULL) {
-				dict_set(d, "PREV_URI"  , a->prev->uri  );
-				dict_set(d, "PREV_TITLE", a->prev->title);
+				cinja_dict_set(d, string_create("PREV_URI"  ), string_copy(a->prev->uri  ));
+				cinja_dict_set(d, string_create("PREV_TITLE"), string_copy(a->prev->title));
 			}
 			if (a->next != NULL) {
-				dict_set(d, "NEXT_URI"  , a->next->uri  );
-				dict_set(d, "NEXT_TITLE", a->next->title);
+				cinja_dict_set(d, string_create("NEXT_URI"  ), string_copy(a->next->uri  ));
+				cinja_dict_set(d, string_create("NEXT_TITLE"), string_copy(a->next->title));
 			}
-			char *b = get_comments(blog_root, nuri);
-			dict_set(d, "COMMENTS", b);
-			free(b);
-			r->body  = temp_render(art_temp, d);
+			cinja_list comments = get_comments(blog_root, nuri);
+			cinja_dict_set(d, string_create("COMMENTS"), comments);
+			cinja_dict_set(d, string_create("comment" ), comment_temp);
+			r->body  = cinja_render(art_temp, d);
+			cinja_dict_free(d);
 		} else {
-			size_t size = 0x1000, index = 0;
-			r->body = malloc(size);
+			cinja_list dicts    = cinja_list_create();
 			for (size_t i = 0; i < arts->count; i++) {
-				article c;
-				list_get(arts, i, &c);
+				cinja_dict d = cinja_dict_create();
+				article    c = cinja_list_get(arts, i).item;
 				if (set_art_dict(d, c, 0) < 0)
 					goto error;
-				char *buf = temp_render(entry_temp, d);
-				if (buf == NULL) {
-					dict_free(d);
-					goto error;
-				}
-				if (buf_write(&r->body, &index, &size, buf, strlen(buf)) < 0)
-					/* TODO */;
-				free(buf);
+				cinja_list_add(dicts, d);
 			}
-			char nul[1] = { 0 };
-			if (buf_write(&r->body, &index, &size, nul, 1) < 0)
-				/* TODO */;
+			cinja_dict dict = cinja_dict_create();
+			cinja_dict_set(dict, string_create("ARTICLES"), dicts);
+			r->body = cinja_render(entry_temp, dict);
+			cinja_dict_free(dict);
+			char buf1[64], buf2[64];
+			string bodystr = (void *)buf1, datestr = (void *)buf2;
+			string_create("BODY", 4, bodystr);
+			string_create("DATE", 4, datestr);
+			for (size_t i = 0; i < dicts->count; i++) {
+				cinja_dict d = dicts->items[i].item;
+				free(cinja_dict_get(d, bodystr).value);
+				free(cinja_dict_get(d, datestr).value);
+				cinja_dict_free(d);
+			}
+			cinja_list_free(dicts);
 		}
 	error:
-		dict_free(d);
-		list_free(arts);
+		free(nuri);
+		cinja_list_free(arts);
 	} else {
-		struct stat statbuf;
-		if (uri[0] == 0)
-			uri = "index.html";
-		if (stat(uri, &statbuf) < 0)
-			return get_error_response(r, 404);
-		char buf[256];
-		if (S_ISDIR(statbuf.st_mode)) {
-			size_t l = strlen(uri);
-			memcpy(buf, uri, l);
-			memcpy(buf + l, "/index.html", sizeof("/index.html"));
-			uri = buf;
+		string path;
+		if (uri->len == 0) {
+			path = string_create("index.html");
+		} else {
+			struct stat statbuf;
+			string components[2] = { uri };
+
+			if (stat(uri->buf, &statbuf) < 0) {
+				components[1] = string_create(".html");
+			} else {
+				if (S_ISDIR(statbuf.st_mode))
+					components[1] = string_create("/index.html");
+				else
+					components[1] = string_create("");
+			}
+			path = string_concat(components, 2);
+			free(components[1]);
 		}
 
-		const char *mime = get_mime_type(uri);
-		dict_set(r->headers, "Content-Type", mime);
-		r->flags = (mime != NULL && strcmp(mime, "text/html") == 0) ? RESPONSE_USE_TEMPLATE : 0;
+		const string mime = get_mime_type(path);
+		cinja_dict_set(r->headers, string_create("Content-Type"), mime);
+		r->flags = (mime != NULL && strcmp(mime->buf, "text/html") == 0) ? RESPONSE_USE_TEMPLATE : 0;
 
-		FILE *f = fopen(uri, "r");
+		FILE *f = fopen(path->buf, "r");
 		if (f == NULL)
 			return get_error_response(r, 500);
 		fseek(f, 0, SEEK_END);
 		size_t s = ftell(f);
 		fseek(f, 0, SEEK_SET);
-		r->body = malloc(s + 1);
-		fread(r->body, s, 1, f);
-		r->body[s] = 0;
+		r->body = malloc(sizeof(r->body->len) + s + 1);
+		fread(r->body->buf, s, 1, f);
+		r->body->buf[s] = 0;
 		fclose(f);
+		r->body->len = s;
+		free(path);
 	}
 	r->status = 200;
 	return r;
@@ -411,11 +409,15 @@ int main()
 		// Do not remove this header
 		printf("X-My-Own-Header: All hail the mighty Duck God\r\n");
 		
-		char *uri = getenv("PATH_INFO");
-		if (uri == NULL)
+		char *uri_a = getenv("PATH_INFO");
+		if (uri_a == NULL)
 			return 1;
-		if (uri[0] == '/')
-			uri++;
+		if (uri_a[0] == '/')
+			uri_a++;
+		size_t uri_a_l = strlen(uri_a);
+		if (uri_a_l > 0 && uri_a[uri_a_l - 1] == '/')
+			uri_a_l--;
+		string uri = string_create(uri_a, uri_a_l);
 
 		char *method = getenv("REQUEST_METHOD");
 		if (method == NULL)
@@ -433,35 +435,36 @@ int main()
 		snprintf(status_str, sizeof(status_str), "%d", r->status);
 
 		if (r->flags & RESPONSE_USE_TEMPLATE) {
-			dict d = dict_create();	
-			dict_set(d, "BODY", r->body);
-			free(r->body);
-			r->body = temp_render(main_temp, d);
+			cinja_dict d = cinja_dict_create();
+			string     b = r->body;
+			cinja_dict_set(d, string_create("BODY"), r->body);
+			r->body = cinja_render(main_temp, d);
 			if (r->body == NULL) {
 				printf("Status: 500\r\nError during rendering");
 				continue;
 			}
-			dict_free(d);
+			free(b);
+			cinja_dict_free(d);
 		}
 
-		const char *k, *v;
-		size_t i = 0;
+		void *state = NULL;
 		printf("Status: %d\r\n", r->status);
-		while (dict_iter(r->headers, &k, &v, &i))
-			printf("%s: %s\r\n", k, v);
-		printf("\r\n%s", r->body);
+		for (cinja_dict_entry_t e = cinja_dict_iter(r->headers, &state); e.value != NULL; e = cinja_dict_iter(r->headers, &state))
+			printf("%s: %s\r\n", e.key->buf, ((string)e.value)->buf);
+		printf("\r\n%s", r->body->buf);
 
 		free(r->body);
-		dict_free(r->headers);
+		cinja_dict_free(r->headers);
 		free(r);
+		free(uri);
 		fflush(stdout);
 	}
 	art_free(blog_root);
 	// Goddamnit Valgrind
-	temp_free(   main_temp);
-	temp_free(  error_temp);
-	temp_free(    art_temp);
-	temp_free(  entry_temp);
-	temp_free(comment_temp);
+	cinja_free(   main_temp);
+	cinja_free(  error_temp);
+	cinja_free(    art_temp);
+	cinja_free(  entry_temp);
+	cinja_free(comment_temp);
 	return 0;
 }

@@ -4,7 +4,7 @@
 
 #include <sys/stat.h>
 #include <stdint.h>
-#include "list.h"
+#include "../lib/template/include/cinja.h"
 
 
 typedef unsigned int uint;
@@ -15,7 +15,7 @@ typedef unsigned int uint;
  * author's name and the title.
  */
 
-struct date {
+typedef struct date {
 	union {
 		struct {
 			uint8_t  min;
@@ -26,29 +26,29 @@ struct date {
 		};
 		uint64_t num;
 	};
-};
+} date_t;
 
 typedef struct art_root {
-	list  articles;
-	char *dir;
+	cinja_list articles;
+	string dir;
 } *art_root;
 
 typedef struct comment {
-	char        *body;
-	list         replies;
-	int          id;
-	int          reply_to;
-	struct date  date;
-	char        *author;
+	string  body;
+	cinja_list replies;
+	int     id;
+	int     reply_to;
+	date_t  date;
+	string  author;
 } *comment;
 
 
 typedef struct article {
-	char           *uri;
-	char           *file;
-	struct date     date;
-	char           *author;
-	char           *title;
+	string     uri;
+	string     file;
+	string     author;
+	string     title;
+	date_t     date;
 	struct article *next;
 	struct article *prev;
 } *article;
@@ -57,19 +57,19 @@ typedef struct article {
 /*
  * Loads or creates a new article database for the given path.
  */
-art_root art_load(const char *path);
+art_root art_load(const string path);
 
 /*
  * Get the comments by an article
  */
-list art_get_comments(art_root root, const char *uri);
+cinja_list art_get_comments(art_root root, const string uri);
 
 /*
  *
  */
-void art_free_comments(list ls);
+void art_free_comments(cinja_list ls);
 
-int art_add_comment(art_root root, const char *uri, comment c, size_t reply_to);
+int art_add_comment(art_root root, const string uri, comment c, size_t reply_to);
 
 /*
  * Frees memory and stores any changes to the database
@@ -80,7 +80,7 @@ void art_free(art_root root);
  * Looks an article up for the given URI and returns it contents if found,
  * otherwise it returns NULL.
  */
-list art_get(art_root root, const char *uri);
+cinja_list art_get(art_root root, const string uri);
 
 /*
  * Parse a date in the following format:

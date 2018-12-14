@@ -1,3 +1,6 @@
 [submodule "lib/template-soup"]
 	path = lib/template
 	url = git@github.com:Demindiro/template-soup.git
+[submodule "lib/string"]
+	path = lib/string
+	url = git@github.com:Demindiro/c-string.git
