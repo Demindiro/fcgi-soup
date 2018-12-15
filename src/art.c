@@ -10,23 +10,34 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <time.h>
-#include "util/string.h"
-#include "../include/dict.h"
-#include "../include/temp.h"
+#include "string/include/string.h"
+#include "template/include/cinja.h"
+
+
+static string comment_path_component;
+
+__attribute__((constructor))
+void init()
+{
+	comment_path_component = string_create("comments/");
+}
 
 
 /*
  * Helpers
  */
-static struct date parse_date(const char *str)
+static struct date parse_date(string str)
 {
-	struct date date;
-	uint32_t M, d, h, m;
-	sscanf(str, "%d-%d-%d %d:%d", &date.year, &M, &d, &h, &m);
-	date.month = M;
-	date.day   = d;
-	date.hour  = h;
-	date.min   = m;
+	struct date date = { .num = 0 };
+	uint32_t Y, M, d, h, m;
+	int n = sscanf(str->buf, "%d-%d-%d %d:%d", &Y, &M, &d, &h, &m);
+	switch (n) {
+	case 5: date.min   = m;
+	case 4: date.hour  = h;
+	case 3: date.day   = d;
+	case 2: date.month = M;
+	case 1: date.year  = Y;
+	}
 	return date;
 }
 
@@ -35,113 +46,102 @@ static struct date parse_date(const char *str)
  * Comments
  */
 
-static comment parse_comment(char *ptr, size_t len)
+static comment parse_comment(const string str)
 {
 	comment c = malloc(sizeof(*c));
-	char *p = ptr, *s = ptr;
-	while (*ptr != '\n')
-		ptr++;
-	*ptr = 0;
-	c->author = string_copy(p);
-	ptr++;
+	size_t i = 0, start = i;
+	while (str->buf[i] != '\n')
+		i++;
+	c->author = string_copy(str, start, i);
+	i++;
 
-	p = ptr;
-	while (*ptr != '\n')
-		ptr++;
-	*(ptr++) = 0;
-	c->date = parse_date(p);
+	start = i;
+	while (str->buf[i] != '\n')
+		i++;
+	string date = string_copy(str, start, i);
+	c->date = parse_date(date);
+	free(date);
+	i++;
 
-	p = ptr;
-	while (*ptr != '\n')
-		ptr++;
-	*(ptr++) = 0;
-	sscanf(p, "%d", &c->reply_to);
+	start = i;
+	while (str->buf[i] != '\n')
+		i++;
+	sscanf(str->buf + start, "%d", &c->reply_to);
+	i++;
 
-	c->body = malloc(len - (ptr - s) + 1);
-	memcpy(c->body, ptr, len - (ptr - s));
-	c->body[len - (ptr - s)] = 0;
+	c->body = string_copy(str, i, str->len);
 
-	c->replies = list_create(sizeof(c));
+	c->replies = cinja_list_create();
 
 	return c;
 }
 
 
-list art_get_comments(art_root root, const char *name)
+cinja_list art_get_comments(art_root root, const string name)
 {
-	char file[256], *ptr = file;
-	size_t l = strlen(root->dir);
-	const char **entries = NULL;
-	comment *comments = NULL;
-	list ls = NULL;
+	const char **entries  = NULL;
+	comment     *comments = NULL;
+	cinja_list  ls        = NULL;
  
-	memcpy(ptr, root->dir, l);
-	ptr += l;
-	l = sizeof("comments");
-	memcpy(ptr, "comments/", l);
-	ptr += l;
-	l = strlen(name);
-	memcpy(ptr, name, l);
-	ptr += l;
-	*ptr = 0;
-
-	FILE *f = fopen(file, "r");
-	fseek(f, 0, SEEK_END);
-	size_t s = ftell(f);
-	fseek(f, 0, SEEK_SET);
-	char *buf = malloc(s + 1);
-	fread(buf, 1, s, f);
-	buf[s] = 0;
-	fclose(f);
-
-	list cs = list_create(sizeof(comment));
-	ptr = buf;
-	for (int id = 0; ptr - buf < s; id++) {
-		while (*ptr == '\n')
-			ptr++;
-		char *p = ptr;
-		while (1) {
-			if (*ptr == '\n') {
-				ptr++;
-				if (*ptr == '\n') {
-					ptr++;
-					if (*ptr == '\n')
-						break;
-				}
-			}
-			if (ptr - buf >= s)
-				break;
-			ptr++;
-		}
-		if (ptr - buf >= s)
-			break;
-		comment c = parse_comment(p, ptr - p - 1);
-		c->id = id;
-		list_add(cs, &c);
-		ptr++;
+	string file_components[3] = { root->dir, comment_path_component, name };
+	string file = string_concat(file_components, 3);
+	FILE *f = fopen(file->buf, "r");
+	string str;
+	if (f == NULL) {
+		str = calloc(sizeof(str->len) + 1, 1);
+	} else {
+		fseek(f, 0, SEEK_END);
+		size_t s = ftell(f);
+		fseek(f, 0, SEEK_SET);
+		str = malloc(sizeof(str->len) + s + 1);
+		fread(str->buf, 1, s, f);
+		str->buf[s] = 0;
+		str->len = s;
+		fclose(f);
 	}
-	free(buf);
+	free(file);
 
-	ls = list_create(sizeof(comment));
-	comment c;
+	cinja_list cs = cinja_list_create();
 	size_t i = 0;
-	while (list_iter(cs, &i, &c)) {
-		list l;
+	for (int id = 0; i < str->len; id++) {
+		while (str->buf[i] == '\n')
+			i++;
+		size_t start = i;
+		while (1) {
+			if (memcmp(&str->buf[i], "\n\n\n", 3) == 0)
+				break;
+			if (i >= str->len)
+				goto done;
+			i++;
+		}
+		string cstr = string_copy(str, start, i);
+		comment c = parse_comment(cstr);
+		free(cstr);
+		c->id = id;
+		cinja_list_add(cs, c);
+		i++;
+	}
+done:
+	free(str);
+
+	ls = cinja_list_create(sizeof(comment));
+	for (size_t i = 0; i < cs->count; i++) {
+		comment c = cinja_list_get(cs, i).item;
+		cinja_list l;
 		if (c->reply_to == -1) {
 			l = ls;
 		} else {
-			comment d;
-			list_get(cs, c->reply_to, &d);
+			comment d = cinja_list_get(cs, c->reply_to).item;
 			l = d->replies;
 		}
-		if (list_add(l, &c) < 0)
+		if (cinja_list_add(l, c) < 0)
 			goto error;
 	}
 
 	goto success;
 error:
 	if (ls != NULL)
-		list_free(ls);
+		cinja_list_free(ls);
 	ls = NULL;
 success:
 	free(entries);
@@ -150,58 +150,56 @@ success:
 }
 
 
-void art_free_comments(list ls)
+void art_free_comments(cinja_list ls)
 {
 	for (size_t i = 0; i < ls->count; i++) {
-		comment c;
-		list_get(ls, i, &c);
-		free(c->author);
-		free(c->body);
-		free(c);
+		comment c = cinja_list_get(ls, i).item;
+		//free(c->author);
+		//free(c->body);
 		art_free_comments(c->replies);
+		free(c);
 	}
-	list_free(ls);
+	cinja_list_free(ls);
 }
 
 
-int art_add_comment(art_root root, const char *uri, comment c, size_t reply_to)
+int art_add_comment(art_root root, const string uri, comment c, size_t reply_to)
 {
-	article a;
-	size_t i = 0;
-	while (list_iter(root->articles, &i, &a)) {
-		if (strcmp(a->uri, uri) == 0)
+	for (size_t i = 0; i < root->articles->count; i++) {
+		article a = cinja_list_get(root->articles, i).item;
+		if (string_eq(a->uri, uri))
 			goto found;
 	}
 	return -1;
-
 found:;
-	char buf[256], *ptr = buf;
-	size_t l = strlen(root->dir);
-	memcpy(ptr, root->dir, l);
-	ptr += l;
-	l = sizeof("comments");
-	memcpy(ptr,"comments/", l);
-	ptr += l;
-	l = strlen(uri);
-	memcpy(ptr, uri, l);
-	ptr += l;
-	*ptr = 0;
-
-	FILE *f = fopen(buf, "a");
+	string file_components[3] = { root->dir, comment_path_component, uri };
+	string file = string_concat(file_components, 3);
+	FILE *f = fopen(file->buf, "a");
+	if (f == NULL) {
+		f = fopen(file->buf, "w");
+		if (f == NULL) {
+			free(file);
+			return -1;
+		}
+	}
+	free(file);
+#if __unix__ || __APPLE__
+	flockfile(f);
+#endif
 	struct date d = c->date;
 
 	fprintf(f,
 	        "%s\n"
 	        "%u-%u-%u %u:%u\n"
 	        "%ld\n",
-		c->author,
+		c->author->buf,
 	        d.year, d.month, d.day, d.hour, d.min,
 		reply_to);
-	ptr = c->body;
 	int nc = 0;
-	while (*ptr != 0) {
-		switch (*ptr) {
-		default : fputc(*ptr  , f); nc = 0; break;
+	for (size_t i = 0; i < c->body->len; i++) {
+		char x = c->body->buf[i];
+		switch (x) {
+		default : fputc(x     , f); nc = 0; break;
 		case '<': fputs("&lt;", f); nc = 0; break;
 		case '>': fputs("&gt;", f); nc = 0; break;
 		case '\n':
@@ -210,7 +208,6 @@ found:;
 				fputc('\n', f);
 			break;
 		}
-		ptr++;
 	}
 	for (size_t i = nc; i <= 3; i++)
 		fputc('\n', f);
@@ -224,7 +221,7 @@ found:;
  * Root
  */
 
-static char *copy_art_field(char **pptr)
+static string copy_art_field(char **pptr)
 {
 	char *ptr = *pptr;
 	while (*ptr != '"')
@@ -239,55 +236,50 @@ static char *copy_art_field(char **pptr)
 	*ptr = 0;
 	ptr++;
 	*pptr = ptr;
-	return string_copy(p);
+	return string_create(p);
 }
 
 
-art_root art_load(const char *path)
+art_root art_load(const string path)
 {
-	size_t l = strlen(path);	
 	art_root root = malloc(sizeof(*root));
 	if (root == NULL)
 		return NULL;
 
-	int append_slash = path[l-1] != '/';
-	root->dir = malloc(l + append_slash + 1);
+	root->dir = malloc(sizeof(root->dir->len) + path->len + 2);
 	if (root->dir == NULL) {
 		free(root);
 		return NULL;
 	}
-	memcpy(root->dir, path, l);
-	if (append_slash) {
-		root->dir[l+0] = '/';
-		root->dir[l+1] = 0;
-	} else {
-		root->dir[l] = 0;
-	}
+	root->dir->len = path->len + 1;
+	memcpy(root->dir->buf, path->buf, path->len);
+	root->dir->buf[path->len+0] = '/';
+	root->dir->buf[path->len+1] = 0;
 
 	char buf[256];
-	memcpy(buf, path, l);
-	memcpy(buf + l, ".list", sizeof(".list"));
+	memcpy(buf, path->buf, path->len);
+	memcpy(buf + path->len, ".list", sizeof(".list"));
 
-	list arts = list_create(sizeof(article));
+	cinja_list arts = cinja_list_create(sizeof(article));
 	FILE *f = fopen(buf, "r");
 	article prev = NULL;
 	while (fgets(buf, sizeof(buf), f) != NULL) {
 		if (buf[0] == '\n')
 			continue;
-		article a = malloc(sizeof(*a));
-		char *ptr = buf;
-		a->title  = copy_art_field(&ptr);
-		a->author = copy_art_field(&ptr);
-		char *date = copy_art_field(&ptr);
-		a->date   = parse_date(date);
+		article a   = malloc(sizeof(*a));
+		char *ptr   = buf;
+		a->title    = copy_art_field(&ptr);
+		a->author   = copy_art_field(&ptr);
+		string date = copy_art_field(&ptr);
+		a->date     = parse_date(date);
 		free(date);
-		a->file   = copy_art_field(&ptr);
-		a->uri    = copy_art_field(&ptr);
+		a->file     = copy_art_field(&ptr);
+		a->uri      = copy_art_field(&ptr);
 		
 		a->prev = prev;
 		if (prev != NULL)
 			prev->next = a;
-		list_add(arts, &a);
+		cinja_list_add(arts, a);
 		prev = a;
 	}
 	fclose(f);
@@ -301,29 +293,28 @@ art_root art_load(const char *path)
 void art_free(art_root root)
 {
 	free(root->dir);
-	article a;
-	size_t i = 0;
-	while (list_iter(root->articles, &i, &a)) {
+	for (size_t i = 0; i < root->articles->count; i++) {
+		article a = cinja_list_get(root->articles, i).item;
 		free(a->title);
 		free(a->author);
 		free(a->file);
 		free(a->uri);
+		free(a);
 	}
-	list_free(root->articles);
+	cinja_list_free(root->articles);
 	free(root);
 }
 
 /*
  * Article
  */
-static list art_get_between_times(art_root root, struct date min, struct date max)
+static cinja_list art_get_between_times(art_root root, struct date min, struct date max)
 {
-	list arts = list_create(sizeof(article));
-	article a;
-	size_t i = 0;
-	while (list_iter(root->articles, &i, &a)) {
+	cinja_list arts = cinja_list_create(sizeof(article));
+	for (size_t i = 0; i < root->articles->count; i++) {
+		article a = cinja_list_get(root->articles, i).item;
 		if (min.num <= a->date.num && a->date.num < max.num)
-			list_add(arts, &a);
+			cinja_list_add(arts, a);
 	}
 	return arts;
 }
@@ -405,22 +396,21 @@ static int uri_to_dates(struct date *min, struct date *max, const char *uri)
 }
 
 
-list art_get(art_root root, const char *uri) {
-	if (*uri == 0 || ('0' <= *uri && *uri <= '9')) {
+cinja_list art_get(art_root root, const string uri) {
+	if (uri->buf[0] == 0 || ('0' <= uri->buf[0] && uri->buf[0] <= '9')) {
 		struct date min, max;
-		if (uri_to_dates(&min, &max, uri) < 0)
+		if (uri_to_dates(&min, &max, uri->buf) < 0)
 			return NULL;
 		return art_get_between_times(root, min, max);
 	} else {
 		article *arts = malloc(sizeof(*arts));
 		article  art  = arts[0] = calloc(1, sizeof(*art));
 
-		article a;
-		size_t i = 0;
-		while (list_iter(root->articles, &i, &a)) {
-			if (strcmp(a->uri, uri) == 0) {
-				list l = list_create(sizeof(a));
-				list_add(l, &a);
+		for (size_t i = 0; i < root->articles->count; i++) {
+			article a = cinja_list_get(root->articles, i).item;
+			if (string_eq(a->uri, uri)) {
+				cinja_list l = cinja_list_create(sizeof(a));
+				cinja_list_add(l, a);
 				return l;
 			}
 		}
