@@ -1,0 +1,11 @@
+<strong>{{ AUTHOR }}</strong><br>
+<em>{{ DATE }}</em><br>
+<p>{{ BODY }}</p>
+<p>{{ ID }}</p>
+{% if REPLIES != none %}
+<div>
+	{% for C in REPLIES %}
+		{{ comment(C) }}
+	{% end %}
+</div>
+{% end %}

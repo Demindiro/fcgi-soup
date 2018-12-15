@@ -1,0 +1,12 @@
+<title>{{ TITLE }}</title>
+<h1>{{ TITLE }}</h1>
+{% if PREV_URI != none %}<a href="{{ PREV_URI }}">&lt;&lt; "{{ PREV_TITLE }}"</a>{% end %}
+{% if NEXT_URI != none %}<a href="{{ NEXT_URI }}">"{{ NEXT_TITLE }}" &rt;&rt;</a>{% end %}
+<p>{{ AUTHOR }}</p>
+<time>{{ DATE }}</time>
+<pre>{{ BODY }}</pre>
+<div>
+{% for C in COMMENTS %}
+	{{ comment(C) }}
+{% end %}
+</div>
