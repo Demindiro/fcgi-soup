@@ -1,6 +1,6 @@
 #include "../include/mime.h"
 #include <stdlib.h>
-#include "dict.h"
+#include "template/include/dict.h"
 
 
 static cinja_dict d;

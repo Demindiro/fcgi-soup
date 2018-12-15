@@ -15,7 +15,7 @@
 #include "../include/mime.h"
 #include "../include/art.h"
 #include "../include/dict.h"
-#include "cinja.h"
+#include "template/include/cinja.h"
 
 
 #define TEMPLATE_DIR "templates/"

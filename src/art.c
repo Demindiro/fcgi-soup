@@ -10,8 +10,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <time.h>
-#include "../lib/string/include/string.h"
-#include "../lib/template/include/cinja.h"
+#include "string/include/string.h"
+#include "template/include/cinja.h"
 
 
 static string comment_path_component;

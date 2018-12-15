@@ -1,5 +1,6 @@
 proj_root = $(shell pwd)
-soup_src  = src/*.c lib/string/src/* lib/template/src/*
+src     = src/*.c lib/template/src/* lib/template/lib/string/src/*
+headers = -Ilib/ -Ilib/template/lib
 
 db  = lldb
 mem = valgrind
@@ -14,10 +15,10 @@ endif
 
 
 build_debug:
-	gcc $(soup_src) $(C_FLAGS) -lfcgi -Ilib/template/include -O0 -g -Wall -o build/soup
+	gcc $(src) $(C_FLAGS) -lfcgi $(headers) -O0 -g -Wall -o build/soup
 
 build_release:
-	gcc $(soup_src) $(C_FLAGS) -lfcgi -Ilib/template/include -O2 -Wall -o build/soup
+	gcc $(src) $(C_FLAGS) -lfcgi $(headers) -O2 -Wall -o build/soup
 
 
 run:
