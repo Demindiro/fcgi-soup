@@ -15,7 +15,9 @@
 #include "../include/mime.h"
 #include "../include/art.h"
 #include "../include/dict.h"
-#include "template/include/cinja.h"
+#include "temp-alloc.h"
+#include "temp/dict.h"
+#include "cinja.h"
 
 
 #define TEMPLATE_DIR "templates/"
@@ -87,7 +89,7 @@ static string date_to_str(struct date d)
 {
 	static char buf[64];
 	snprintf(buf, sizeof(buf), "%d-%d-%d %d:%d", d.year, d.month, d.day, d.hour, d.min);
-	return string_create(buf);
+	return temp_string_create(buf);
 }
 
 
@@ -134,7 +136,7 @@ static int set_art_dict(cinja_dict d, article art, int flags) {
 		}
 		read(fd, buf, statbuf.st_size);
 		buf[statbuf.st_size] = 0;
-		cinja_dict_set(d, string_create("BODY"), string_create(buf));
+		cinja_dict_set(d, temp_string_create("BODY"), temp_string_create(buf));
 		free(buf);
 	}
 
@@ -143,10 +145,10 @@ static int set_art_dict(cinja_dict d, article art, int flags) {
 	snprintf(buf, sizeof(buf), "%d-%d-%d %d:%d",
 			t.year, t.month, t.day, t.hour, t.min);
 
-	cinja_dict_set(d, string_create("URI"   ), art->uri);
-	cinja_dict_set(d, string_create("DATE"  ), string_create(buf));
-	cinja_dict_set(d, string_create("TITLE" ), art->title);
-	cinja_dict_set(d, string_create("AUTHOR"), art->author);
+	cinja_dict_set(d, temp_string_create("URI"   ), art->uri);
+	cinja_dict_set(d, temp_string_create("DATE"  ), temp_string_create(buf));
+	cinja_dict_set(d, temp_string_create("TITLE" ), art->title);
+	cinja_dict_set(d, temp_string_create("AUTHOR"), art->author);
 
 	return 0;
 }
@@ -155,19 +157,19 @@ static cinja_dict _comment_to_dict(comment c)
 {
 	char idbuf[64];
 	snprintf(idbuf, sizeof(idbuf), "%d", c->id);
-	cinja_dict d = cinja_dict_create();
-	cinja_dict_set(d, string_create("AUTHOR"), c->author);
-	cinja_dict_set(d, string_create("DATE"  ), date_to_str(c->date));
-	cinja_dict_set(d, string_create("BODY"  ), c->body);
-	cinja_dict_set(d, string_create("ID"    ), string_create(idbuf));
+	cinja_dict d = cinja_temp_dict_create();
+	cinja_temp_dict_set(d, temp_string_create("AUTHOR"), c->author);
+	cinja_temp_dict_set(d, temp_string_create("DATE"  ), date_to_str(c->date));
+	cinja_temp_dict_set(d, temp_string_create("BODY"  ), c->body);
+	cinja_temp_dict_set(d, temp_string_create("ID"    ), temp_string_create(idbuf));
 	if (c->replies->count > 0) {
-		cinja_list replies = cinja_list_create();
+		cinja_list replies = cinja_temp_list_create();
 		for (size_t i = 0; i < c->replies->count; i++) {
 			comment d = cinja_list_get(c->replies, i).item;
 			cinja_list_add(replies, _comment_to_dict(d));
 		}
-		cinja_dict_set(d, string_create("REPLIES"), replies);
-		cinja_dict_set(d, string_create("comment"), comment_temp);
+		cinja_temp_dict_set(d, temp_string_create("REPLIES"), replies);
+		cinja_temp_dict_set(d, temp_string_create("comment"), comment_temp);
 	}
 	return d;
 }
@@ -178,12 +180,11 @@ static cinja_list get_comments(art_root root, const string uri)
 	cinja_list ls = art_get_comments(root, uri);
 	if (ls == NULL)
 		return NULL;
-	cinja_list comments = cinja_list_create();
+	cinja_list comments = cinja_temp_list_create();
 	for (size_t i = 0; i < ls->count; i++) {
 		comment c = cinja_list_get(ls, ls->count - i - 1).item;
 		cinja_list_add(comments, _comment_to_dict(c));
 	}
-	art_free_comments(ls);
 	return comments;
 }
 
@@ -313,36 +314,34 @@ static response handle_get(const string uri)
 		if (arts == NULL)
 			return get_error_response(r, 404);
 		if (arts->count == 1) {
-			cinja_dict d = cinja_dict_create();
-			article a = cinja_list_get(arts, 0).item;
+			cinja_dict d = cinja_temp_dict_create();
+			article    a = cinja_list_get(arts, 0).item;
 			if (set_art_dict(d, a, 0x1) < 0)
 				return get_error_response(r, 500);
 			if (a->prev != NULL) {
-				cinja_dict_set(d, string_create("PREV_URI"  ), string_copy(a->prev->uri  ));
-				cinja_dict_set(d, string_create("PREV_TITLE"), string_copy(a->prev->title));
+				cinja_dict_set(d, temp_string_create("PREV_URI"  ), temp_string_copy(a->prev->uri  ));
+				cinja_dict_set(d, temp_string_create("PREV_TITLE"), temp_string_copy(a->prev->title));
 			}
 			if (a->next != NULL) {
-				cinja_dict_set(d, string_create("NEXT_URI"  ), string_copy(a->next->uri  ));
-				cinja_dict_set(d, string_create("NEXT_TITLE"), string_copy(a->next->title));
+				cinja_dict_set(d, temp_string_create("NEXT_URI"  ), temp_string_copy(a->next->uri  ));
+				cinja_dict_set(d, temp_string_create("NEXT_TITLE"), temp_string_copy(a->next->title));
 			}
 			cinja_list comments = get_comments(blog_root, nuri);
-			cinja_dict_set(d, string_create("COMMENTS"), comments);
-			cinja_dict_set(d, string_create("comment" ), comment_temp);
+			cinja_dict_set(d, temp_string_create("COMMENTS"), comments);
+			cinja_dict_set(d, temp_string_create("comment" ), comment_temp);
 			r->body  = cinja_render(art_temp, d);
-			cinja_dict_free(d);
 		} else {
-			cinja_list dicts    = cinja_list_create();
+			cinja_list dicts    = cinja_temp_list_create();
 			for (size_t i = 0; i < arts->count; i++) {
-				cinja_dict d = cinja_dict_create();
+				cinja_dict d = cinja_temp_dict_create();
 				article    c = cinja_list_get(arts, i).item;
 				if (set_art_dict(d, c, 0) < 0)
 					goto error;
 				cinja_list_add(dicts, d);
 			}
-			cinja_dict dict = cinja_dict_create();
-			cinja_dict_set(dict, string_create("ARTICLES"), dicts);
+			cinja_dict dict = cinja_temp_dict_create();
+			cinja_dict_set(dict, temp_string_create("ARTICLES"), dicts);
 			r->body = cinja_render(entry_temp, dict);
-			cinja_dict_free(dict);
 			char buf1[64], buf2[64];
 			string bodystr = (void *)buf1, datestr = (void *)buf2;
 			string_create("BODY", 4, bodystr);
@@ -350,14 +349,10 @@ static response handle_get(const string uri)
 			for (size_t i = 0; i < dicts->count; i++) {
 				cinja_dict d = dicts->items[i].item;
 				free(cinja_dict_get(d, bodystr).value);
-				free(cinja_dict_get(d, datestr).value);
-				cinja_dict_free(d);
 			}
-			cinja_list_free(dicts);
 		}
 	error:
 		free(nuri);
-		cinja_list_free(arts);
 	} else {
 		string path;
 		if (uri->len == 0) {
@@ -405,7 +400,9 @@ int main()
 	if (setup() < 0)
 		return 1;
 
-	while (FCGI_Accept() >= 0) {	
+	while (FCGI_Accept() >= 0) {
+		temp_alloc_push(1 << 20);
+
 		// Do not remove this header
 		printf("X-My-Own-Header: All hail the mighty Duck God\r\n");
 		
@@ -458,7 +455,10 @@ int main()
 		free(r);
 		free(uri);
 		fflush(stdout);
+
+		temp_alloc_reset();
 	}
+	temp_alloc_pop();
 	art_free(blog_root);
 	// Goddamnit Valgrind
 	cinja_free(   main_temp);

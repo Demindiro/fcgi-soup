@@ -1,7 +1,7 @@
 #ifndef MIME_H
 #define MIME_H
 
-#include "string/include/string.h"
+#include "cstring.h"
 
 /*
  * Gets a mime type given a file name. Simply passing an extension is also
