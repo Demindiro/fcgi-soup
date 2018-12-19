@@ -67,11 +67,3 @@ To post a comment, a form with the following parameters must be posted:
 Using FCGI Soup
 ===============
 You will need a proxy of some sort that supports (F)CGI. e.g. Apache has `mod_fcgi`.
-
-
-IMPORTANT
-=========
-
-This project is still in development and builds are generally unstable. Since there are still
-quite a bit of memory leaks, it is recommended to run the builds as a CGI program (a CGI
-program only starts up to serve a single request and immediatly shuts down afterwards).
