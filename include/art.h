@@ -67,8 +67,6 @@ cinja_list art_get_comments(art_root root, const string uri);
 /*
  *
  */
-void art_free_comments(cinja_list ls);
-
 int art_add_comment(art_root root, const string uri, comment c, size_t reply_to);
 
 /*

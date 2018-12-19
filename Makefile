@@ -1,6 +1,6 @@
 proj_root = $(shell pwd)
-src     = src/*.c lib/template/src/* lib/template/lib/string/src/*
-headers = -Ilib/ -Ilib/template/lib
+src     = src/*.c lib/template/src/*.c lib/template/lib/*/src/*.c lib/template/src/*/*.c
+headers = -Ilib/template/include -Ilib/template/lib/string/include -Ilib/template/lib/temp-alloc/include
 
 db  = lldb
 mem = valgrind

@@ -10,8 +10,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <time.h>
-#include "string/include/string.h"
-#include "template/include/cinja.h"
+#include "temp-alloc.h"
+#include "cinja.h"
+#include "temp/cinja.h"
 
 
 static string comment_path_component;
@@ -48,19 +49,18 @@ static struct date parse_date(string str)
 
 static comment parse_comment(const string str)
 {
-	comment c = malloc(sizeof(*c));
+	comment c = temp_alloc(sizeof(*c));
 	size_t i = 0, start = i;
 	while (str->buf[i] != '\n')
 		i++;
-	c->author = string_copy(str, start, i);
+	c->author = temp_string_copy(str, start, i);
 	i++;
 
 	start = i;
 	while (str->buf[i] != '\n')
 		i++;
-	string date = string_copy(str, start, i);
+	string date = temp_string_copy(str, start, i);
 	c->date = parse_date(date);
-	free(date);
 	i++;
 
 	start = i;
@@ -69,9 +69,9 @@ static comment parse_comment(const string str)
 	sscanf(str->buf + start, "%d", &c->reply_to);
 	i++;
 
-	c->body = string_copy(str, i, str->len);
+	c->body = temp_string_copy(str, i, str->len);
 
-	c->replies = cinja_list_create();
+	c->replies = cinja_temp_list_create();
 
 	return c;
 }
@@ -84,24 +84,23 @@ cinja_list art_get_comments(art_root root, const string name)
 	cinja_list  ls        = NULL;
  
 	string file_components[3] = { root->dir, comment_path_component, name };
-	string file = string_concat(file_components, 3);
+	string file = temp_string_concat(file_components, 3);
 	FILE *f = fopen(file->buf, "r");
 	string str;
 	if (f == NULL) {
-		str = calloc(sizeof(str->len) + 1, 1);
+		str = temp_string_create("");
 	} else {
 		fseek(f, 0, SEEK_END);
 		size_t s = ftell(f);
 		fseek(f, 0, SEEK_SET);
-		str = malloc(sizeof(str->len) + s + 1);
+		str = temp_alloc(sizeof(str->len) + s + 1);
 		fread(str->buf, 1, s, f);
 		str->buf[s] = 0;
 		str->len = s;
 		fclose(f);
 	}
-	free(file);
 
-	cinja_list cs = cinja_list_create();
+	cinja_list cs = cinja_temp_list_create();
 	size_t i = 0;
 	for (int id = 0; i < str->len; id++) {
 		while (str->buf[i] == '\n')
@@ -122,9 +121,7 @@ cinja_list art_get_comments(art_root root, const string name)
 		i++;
 	}
 done:
-	free(str);
-
-	ls = cinja_list_create(sizeof(comment));
+	ls = cinja_temp_list_create(sizeof(comment));
 	for (size_t i = 0; i < cs->count; i++) {
 		comment c = cinja_list_get(cs, i).item;
 		cinja_list l;
@@ -147,19 +144,6 @@ success:
 	free(entries);
 	free(comments);
 	return ls;
-}
-
-
-void art_free_comments(cinja_list ls)
-{
-	for (size_t i = 0; i < ls->count; i++) {
-		comment c = cinja_list_get(ls, i).item;
-		//free(c->author);
-		//free(c->body);
-		art_free_comments(c->replies);
-		free(c);
-	}
-	cinja_list_free(ls);
 }
 
 
@@ -310,7 +294,7 @@ void art_free(art_root root)
  */
 static cinja_list art_get_between_times(art_root root, struct date min, struct date max)
 {
-	cinja_list arts = cinja_list_create(sizeof(article));
+	cinja_list arts = cinja_temp_list_create(sizeof(article));
 	for (size_t i = 0; i < root->articles->count; i++) {
 		article a = cinja_list_get(root->articles, i).item;
 		if (min.num <= a->date.num && a->date.num < max.num)
@@ -403,13 +387,13 @@ cinja_list art_get(art_root root, const string uri) {
 			return NULL;
 		return art_get_between_times(root, min, max);
 	} else {
-		article *arts = malloc(sizeof(*arts));
-		article  art  = arts[0] = calloc(1, sizeof(*art));
+		article *arts = temp_alloc(sizeof(*arts));
+		article  art  = arts[0] = temp_alloc(sizeof(*art));
 
 		for (size_t i = 0; i < root->articles->count; i++) {
 			article a = cinja_list_get(root->articles, i).item;
 			if (string_eq(a->uri, uri)) {
-				cinja_list l = cinja_list_create(sizeof(a));
+				cinja_list l = cinja_temp_list_create(sizeof(a));
 				cinja_list_add(l, a);
 				return l;
 			}
