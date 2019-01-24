@@ -15,17 +15,17 @@ endif
 
 
 build_debug:
-	gcc $(src) $(C_FLAGS) -lfcgi $(headers) -O0 -g -Wall -o build/soup
+	gcc $(src) $(CFLAGS) -DNO_FCGI_DEFINES -lfcgi $(headers) -O0 -g -Wall -o build/soup
 
 build_release:
-	gcc $(src) $(C_FLAGS) -lfcgi $(headers) -O2 -Wall -o build/soup
+	gcc $(src) $(CFLAGS) -lfcgi $(headers) -O2 -Wall -o build/soup
 
 
 run:
-	(cd $(ROOT); REQUEST_METHOD=$(METHOD) PATH_INFO=$(URI) $(proj_root)/build/soup)
+	cd $(ROOT); REQUEST_METHOD=$(METHOD) PATH_INFO=$(URI) $(proj_root)/build/soup
 
 run_db: build_debug
-	(cd $(ROOT); REQUEST_METHOD=$(METHOD) PATH_INFO=$(URI) $(db) $(DB_FLAGS) $(proj_root)/build/soup)
+	cd $(ROOT); REQUEST_METHOD=$(METHOD) PATH_INFO=$(URI) $(db) $(DBFLAGS) $(proj_root)/build/soup
 
 run_mem: build_debug
-	(cd $(ROOT); REQUEST_METHOD=$(METHOD) PATH_INFO=$(URI) $(mem) $(DB_FLAGS) $(proj_root)/build/soup)
+	cd $(ROOT); REQUEST_METHOD=$(METHOD) PATH_INFO=$(URI) $(mem) --suppressions=../osx.supp $(DBFLAGS) $(proj_root)/build/soup
