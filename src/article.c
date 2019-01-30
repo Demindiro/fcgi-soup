@@ -253,13 +253,11 @@ art_root art_load(const string path)
 		article a   = malloc(sizeof(*a));
 		char *ptr   = buf;
 		a->title    = copy_art_field(&ptr);
-		a->author   = copy_art_field(&ptr);
 		string date = copy_art_field(&ptr);
 		a->date     = parse_date(date);
 		free(date);
 		a->file     = copy_art_field(&ptr);
 		a->uri      = copy_art_field(&ptr);
-		
 		a->prev = prev;
 		if (prev != NULL)
 			prev->next = a;
@@ -280,7 +278,6 @@ void art_free(art_root root)
 	for (size_t i = 0; i < root->articles->count; i++) {
 		article a = cinja_list_get(root->articles, i).item;
 		free(a->title);
-		free(a->author);
 		free(a->file);
 		free(a->uri);
 		free(a);

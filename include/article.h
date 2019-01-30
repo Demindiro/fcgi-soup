@@ -11,8 +11,8 @@ typedef unsigned int uint;
 
 /*
  * An article root is a wrapper around a database containing article entries.
- * Each entry contains the URI, the file path, the date of submission, the
- * author's name and the title.
+ * Each entry contains the URI, the file path, the date of submission and the
+ * title.
  */
 
 typedef struct date {
@@ -46,7 +46,6 @@ typedef struct comment {
 typedef struct article {
 	string     uri;
 	string     file;
-	string     author;
 	string     title;
 	date_t     date;
 	struct article *next;
