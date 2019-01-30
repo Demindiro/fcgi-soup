@@ -9,7 +9,7 @@
 #include <unistd.h>
 #include <time.h>
 #include "../include/mime.h"
-#include "../include/art.h"
+#include "../include/article.h"
 #include "../include/dict.h"
 #include "temp-alloc.h"
 #include "temp/dict.h"
@@ -434,7 +434,7 @@ static response handle_get(const string uri)
 int main()
 {
 	// Setup
-	temp_alloc_push(1 << 30);
+	temp_alloc_push(1 << 27);
 	if (setup() < 0)
 		return 1;
 	temp_alloc_reset();
@@ -474,14 +474,13 @@ int main()
 
 		// Check if the response should be wrapped in the base template
 		if (r->flags & RESPONSE_USE_TEMPLATE) {
-			cinja_dict d = cinja_dict_create();
+			cinja_dict d = cinja_temp_dict_create();
 			cinja_dict_set(d, temp_string_create("BODY"), r->body);
 			r->body = cinja_temp_render(main_temp, d);
 			if (!r->body) {
 				printf("Status: 500\r\nError during rendering");
 				continue;
 			}
-			cinja_dict_free(d);
 		}
 
 		// Pass the headers and body to the proxy
