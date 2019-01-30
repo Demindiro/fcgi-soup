@@ -12,7 +12,7 @@ includes := $(includes:./%=-I%)
 lib = -lfcgi
 
 cc_cmd = $(CC) $(CFLAGS) $(includes) $< -c -o $@
-ld_cmd = $(CC) $(CFLAGS) $(lib) $(obj) -o $@
+ld_cmd = $(CC) $(CFLAGS) $(obj) $(lib) -o $@
 db = lldb
 mem = valgrind
 

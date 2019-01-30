@@ -513,10 +513,10 @@ int main()
 			{
 				const char *host = getenv("HTTP_HOST");
 				printf("Status: 301\r\n"
-				       "Location: %s\r\n"
+				       "Location: https://%s%s\r\n"
 				       "\r\n"
 				       "<a href=\"https://%s%s\">Click here to go to the secure page</a>",
-				       path_info, host, path_info);
+				       host, path_info, host, path_info);
 				continue;
 			}
 		}
