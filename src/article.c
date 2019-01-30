@@ -1,4 +1,4 @@
-#include "../include/art.h"
+#include "../include/article.h"
 #include <dirent.h>
 #include <stdint.h>
 #include <stdio.h>

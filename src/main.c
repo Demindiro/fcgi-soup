@@ -1,10 +1,6 @@
 #include <errno.h>
 #include <fastcgi.h>
-#ifdef NORMAL_STDIO
-#include <stdio.h>
-#else
 #include <fcgi_stdio.h>
-#endif
 #include <fcntl.h>
 #include <string.h>
 #include <stdlib.h>
@@ -13,33 +9,37 @@
 #include <unistd.h>
 #include <time.h>
 #include "../include/mime.h"
-#include "../include/art.h"
+#include "../include/article.h"
 #include "../include/dict.h"
 #include "temp-alloc.h"
 #include "temp/dict.h"
 #include "cinja.h"
 
 
+// Constants
 #define TEMPLATE_DIR "templates/"
 #define MAIN_TEMP    TEMPLATE_DIR "main.html"
 #define ERROR_TEMP   TEMPLATE_DIR "error.html"
 #define ARTICLE_TEMP TEMPLATE_DIR "article.html"
 #define ENTRY_TEMP   TEMPLATE_DIR "article_list.html"
 #define COMMENT_TEMP TEMPLATE_DIR "comment.html"
-
-
-cinja_template main_temp;
-cinja_template error_temp;
-cinja_template art_temp;
-cinja_template entry_temp;
-cinja_template comment_temp;
-art_root blog_root;
-
-
-#define return_error(ret, msg, ...) { fprintf(stderr, msg, ##__VA_ARGS__); perror(": "); return ret; } ""
-
-
 #define RESPONSE_USE_TEMPLATE 0x1
+
+
+// Global variables
+cinja_template   main_temp;
+cinja_template   error_temp;
+cinja_template     art_temp;
+cinja_template   entry_temp;
+cinja_template comment_temp;
+art_root          blog_root;
+
+
+// Macros
+#define RETURN_ERROR(ret, msg, ...) { fprintf(stderr, msg, ##__VA_ARGS__); perror(": "); return ret; } ""
+
+
+// Structs
 typedef struct response {
 	cinja_dict headers;
 	string body;
@@ -50,8 +50,8 @@ typedef struct response {
 
 static response response_create()
 {
-	response r = malloc(sizeof(*r));
-	r->headers = cinja_dict_create();
+	response r = temp_alloc(sizeof(*r));
+	r->headers = cinja_temp_dict_create();
 	r->body    = NULL;
 	r->flags   = 0;
 	return r;
@@ -62,11 +62,14 @@ static const char *get_error_msg(int status)
 {
 	switch(status) {
 		default:  return "Uhm...";
+
+		// 4xx
 		case 404: return "Invalid URI";
 		case 405: return "Bad method";
 		case 418: return "Want some tea?";
 
-		case 500: return "Oh noes!";
+		// 5xx
+		case 500: return "Internal error";
 	}
 }
 
@@ -77,9 +80,10 @@ static response get_error_response(response r, int status) {
 	r->flags  = RESPONSE_USE_TEMPLATE;
 	char buf[64];
 	snprintf(buf, sizeof(buf), "%d", status);
-	cinja_dict_set(d, string_create("STATUS" ), string_create(buf));
-	cinja_dict_set(d, string_create("MESSAGE"), string_create(get_error_msg(r->status))); 
-	r->body = cinja_render(error_temp, d);
+	cinja_dict_set(d, temp_string_create("STATUS" ), temp_string_create(buf));
+	cinja_dict_set(d, temp_string_create("MESSAGE"),
+	               temp_string_create(get_error_msg(r->status)));
+	r->body = cinja_temp_render(error_temp, d);
 	cinja_dict_free(d);
 	return r;
 }
@@ -96,41 +100,35 @@ static string date_to_str(struct date d)
 static cinja_template load_temp(char *file)
 {
 	cinja_template temp = cinja_create_from_file(file);
-	if (temp == NULL)
-		return_error(NULL, "Couldn't create temp of '%s'", file);
+	if (!temp)
+		RETURN_ERROR(NULL, "Couldn't create temp of '%s'", file);
 	return temp;
 }
 
 
 static int setup()
 {
-	main_temp = load_temp(   MAIN_TEMP);
-	error_temp = load_temp(  ERROR_TEMP);
-	art_temp = load_temp(ARTICLE_TEMP);
+	   main_temp = load_temp(   MAIN_TEMP);
+	  error_temp = load_temp(  ERROR_TEMP);
+	    art_temp = load_temp(ARTICLE_TEMP);
 	comment_temp = load_temp(COMMENT_TEMP);
-	entry_temp = load_temp(  ENTRY_TEMP);
-	if (   main_temp == NULL ||
-			error_temp == NULL ||
-			art_temp == NULL ||
-			comment_temp == NULL ||
-			entry_temp == NULL)
+	  entry_temp = load_temp(  ENTRY_TEMP);
+	if (!main_temp || !error_temp || !art_temp || !comment_temp || !entry_temp)
 		return -1;
-	string s = string_create("blog");
-	blog_root = art_load(s);
-	free(s);
-	return blog_root == NULL ? -1 : 1;
+	blog_root = art_load(temp_string_create("blog"));
+	return blog_root ? 0 : -1;
 }
 
 
-static int set_art_dict(cinja_dict d, article art, int flags) {
-	if (flags & 0x1) {
+static int set_article_dict(cinja_dict d, article art, int load_body) {
+	if (load_body) {
 		struct stat statbuf;
 		int fd = open(art->file->buf, O_RDONLY);
 		if (fd < 0)
 			return -1;
 		fstat(fd, &statbuf);
 		char *buf = malloc(statbuf.st_size + 1);
-		if (buf == NULL) {
+		if (!buf) {
 			close(fd);
 			return -1;
 		}
@@ -143,7 +141,7 @@ static int set_art_dict(cinja_dict d, article art, int flags) {
 	struct date t = art->date;
 	char buf[64];
 	snprintf(buf, sizeof(buf), "%d-%d-%d %d:%d",
-			t.year, t.month, t.day, t.hour, t.min);
+	         t.year, t.month, t.day, t.hour, t.min);
 
 	cinja_dict_set(d, temp_string_create("URI"   ), art->uri);
 	cinja_dict_set(d, temp_string_create("DATE"  ), temp_string_create(buf));
@@ -152,6 +150,11 @@ static int set_art_dict(cinja_dict d, article art, int flags) {
 
 	return 0;
 }
+
+
+/**
+Comments
+*/
 
 static cinja_dict _comment_to_dict(comment c)
 {
@@ -178,7 +181,7 @@ static cinja_dict _comment_to_dict(comment c)
 static cinja_list get_comments(art_root root, const string uri)
 {
 	cinja_list ls = art_get_comments(root, uri);
-	if (ls == NULL)
+	if (!ls)
 		return NULL;
 	cinja_list comments = cinja_temp_list_create();
 	for (size_t i = 0; i < ls->count; i++) {
@@ -188,6 +191,10 @@ static cinja_list get_comments(art_root root, const string uri)
 	return comments;
 }
 
+
+/**
+Query
+*/
 
 static char hex_to_char(const char *s)
 {
@@ -214,14 +221,14 @@ static string copy_query_field(const char **pptr, char delim)
 	const char *ptr = *pptr;
 	size_t s = 4000, i = 0;
 	string v = malloc(sizeof(v->len) + s + 1);
-	if (v == NULL)
+	if (!v)
 		return NULL;
 
 	const char *p = ptr;
 	for (v->len = 0; *ptr != delim && *ptr != 0; v->len++) {
 		if (s <= i) {
 			string tmp = realloc(v, s * 3 / 2);
-			if (tmp == NULL) {
+			if (!tmp) {
 				free(v);
 				return NULL;
 			}
@@ -261,6 +268,62 @@ static cinja_dict parse_query(const char *q)
 	return d;
 }
 
+
+/**
+Get the static file associated with a URI.
+
+Returns: A valid response object with as body the contents of the static file.
+*/
+static response get_static_file(string uri)
+{
+	response r = response_create();
+	string path;
+
+	// Get the path to the requested file
+	if (uri->len == 0) {
+		path = temp_string_create("index.html");
+		r->flags = RESPONSE_USE_TEMPLATE;
+	} else {
+		struct stat statbuf;
+		string components[2] = { uri };
+		if (stat(uri->buf, &statbuf) < 0) {
+			components[1] = temp_string_create(".html");
+			r->flags = RESPONSE_USE_TEMPLATE;
+		} else if (S_ISDIR(statbuf.st_mode)) {
+			components[1] = temp_string_create("/index.html");
+			r->flags = RESPONSE_USE_TEMPLATE;
+		} else {
+			components[1] = temp_string_create("");
+			r->flags = 0;
+		}
+		path = temp_string_concat(components, 2);
+	}
+
+	// Get the MIME type
+	const string mime = get_mime_type(path);
+	cinja_dict_set(r->headers, temp_string_create("Content-Type"), mime);
+
+	// Load the file
+	FILE *f = fopen(path->buf, "r");
+	if (!f)
+		return get_error_response(r, 500);
+	fseek(f, 0, SEEK_END);
+	size_t s = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	r->body = temp_alloc(sizeof(r->body->len) + s + 1);
+	fread(r->body->buf, s, 1, f);
+	r->body->buf[s] = 0;
+	fclose(f);
+	r->body->len = s;
+
+	r->status = 200;
+	return r;
+}
+
+
+/**
+Request handlers
+*/
 
 static response handle_post(const string uri)
 {
@@ -306,17 +369,25 @@ static response handle_post(const string uri)
 
 static response handle_get(const string uri)
 {
-	response r = response_create();
+
+	// Check if a blog post is requested
 	if (strncmp("blog", uri->buf, 4) == 0 && (uri->buf[4] == '/' || uri->buf[4] == 0)) {
+		response r = response_create();
 		r->flags = RESPONSE_USE_TEMPLATE;
-		const string nuri = string_create(uri->buf + (uri->buf[4] == '/' ? 5 : 4));
+
+		// Cut the "blog" part of the uri
+		const string nuri = temp_string_create(uri->buf + (uri->buf[4] == '/' ? 5 : 4));
+
+		// Get the article(s)
 		cinja_list arts = art_get(blog_root, nuri);
-		if (arts == NULL)
+		if (!arts)
 			return get_error_response(r, 404);
+
 		if (arts->count == 1) {
+			// If there is only one article, return the article itself
 			cinja_dict d = cinja_temp_dict_create();
 			article    a = cinja_list_get(arts, 0).item;
-			if (set_art_dict(d, a, 0x1) < 0)
+			if (set_article_dict(d, a, 1) < 0)
 				return get_error_response(r, 500);
 			if (a->prev != NULL) {
 				cinja_dict_set(d, temp_string_create("PREV_URI"  ), temp_string_copy(a->prev->uri  ));
@@ -329,19 +400,20 @@ static response handle_get(const string uri)
 			cinja_list comments = get_comments(blog_root, nuri);
 			cinja_dict_set(d, temp_string_create("COMMENTS"), comments);
 			cinja_dict_set(d, temp_string_create("comment" ), comment_temp);
-			r->body  = cinja_render(art_temp, d);
+			r->body  = cinja_temp_render(art_temp, d);
 		} else {
-			cinja_list dicts    = cinja_temp_list_create();
+			// Return the list of articles
+			cinja_list dicts = cinja_temp_list_create();
 			for (size_t i = 0; i < arts->count; i++) {
 				cinja_dict d = cinja_temp_dict_create();
 				article    c = cinja_list_get(arts, i).item;
-				if (set_art_dict(d, c, 0) < 0)
-					goto error;
+				if (set_article_dict(d, c, 0) < 0)
+					return get_error_response(r, 500);
 				cinja_list_add(dicts, d);
 			}
 			cinja_dict dict = cinja_temp_dict_create();
 			cinja_dict_set(dict, temp_string_create("ARTICLES"), dicts);
-			r->body = cinja_render(entry_temp, dict);
+			r->body = cinja_temp_render(entry_temp, dict);
 			char buf1[64], buf2[64];
 			string bodystr = (void *)buf1, datestr = (void *)buf2;
 			string_create("BODY", 4, bodystr);
@@ -351,75 +423,43 @@ static response handle_get(const string uri)
 				free(cinja_dict_get(d, bodystr).value);
 			}
 		}
-	error:
-		free(nuri);
+		r->status = 200;
+		return r;
 	} else {
-		string path;
-		if (uri->len == 0) {
-			path = string_create("index.html");
-		} else {
-			struct stat statbuf;
-			string components[2] = { uri };
-
-			if (stat(uri->buf, &statbuf) < 0) {
-				components[1] = string_create(".html");
-			} else {
-				if (S_ISDIR(statbuf.st_mode))
-					components[1] = string_create("/index.html");
-				else
-					components[1] = string_create("");
-			}
-			path = string_concat(components, 2);
-			free(components[1]);
-		}
-
-		const string mime = get_mime_type(path);
-		cinja_dict_set(r->headers, string_create("Content-Type"), mime);
-		r->flags = (mime != NULL && strcmp(mime->buf, "text/html") == 0) ? RESPONSE_USE_TEMPLATE : 0;
-
-		FILE *f = fopen(path->buf, "r");
-		if (f == NULL)
-			return get_error_response(r, 500);
-		fseek(f, 0, SEEK_END);
-		size_t s = ftell(f);
-		fseek(f, 0, SEEK_SET);
-		r->body = malloc(sizeof(r->body->len) + s + 1);
-		fread(r->body->buf, s, 1, f);
-		r->body->buf[s] = 0;
-		fclose(f);
-		r->body->len = s;
-		free(path);
+		return get_static_file(uri);
 	}
-	r->status = 200;
-	return r;
 }
 
 
 int main()
 {
+	// Setup
+	temp_alloc_push(1 << 27);
 	if (setup() < 0)
 		return 1;
+	temp_alloc_reset();
 
+	// Loop
 	while (FCGI_Accept() >= 0) {
-		temp_alloc_push(1 << 20);
 
 		// Do not remove this header
 		printf("X-My-Own-Header: All hail the mighty Duck God\r\n");
-		
-		char *uri_a = getenv("PATH_INFO");
-		if (uri_a == NULL)
-			return 1;
-		if (uri_a[0] == '/')
-			uri_a++;
-		size_t uri_a_l = strlen(uri_a);
-		if (uri_a_l > 0 && uri_a[uri_a_l - 1] == '/')
-			uri_a_l--;
-		string uri = string_create(uri_a, uri_a_l);
 
-		char *method = getenv("REQUEST_METHOD");
-		if (method == NULL)
-			return 1;
+		// Get the request/FCGI variables
+		const char *path_info  = getenv("PATH_INFO");
+		const char *method = getenv("REQUEST_METHOD");
+		if (!path_info || !method)
+			RETURN_ERROR(1, "%s is not defined\n", !path_info ? "PATH_INFO" : "REQUEST_METHOD");
 
+		// Convert path_info to a string.
+		if (path_info[0] == '/')
+			path_info++;
+		size_t path_info_l = strlen(path_info);
+		if (path_info_l > 0 && path_info[path_info_l - 1] == '/')
+			path_info_l--;
+		string uri = temp_string_create(path_info, path_info_l);
+
+		// Parse the request
 		response r;
 		if (strcmp(method, "GET") == 0)
 			r = handle_get(uri);
@@ -428,36 +468,33 @@ int main()
 		else
 			r = get_error_response(response_create(), 501);
 
+		// Convert the status integer to a string
 		char status_str[64];
 		snprintf(status_str, sizeof(status_str), "%d", r->status);
 
+		// Check if the response should be wrapped in the base template
 		if (r->flags & RESPONSE_USE_TEMPLATE) {
-			cinja_dict d = cinja_dict_create();
-			string     b = r->body;
-			cinja_dict_set(d, string_create("BODY"), r->body);
-			r->body = cinja_render(main_temp, d);
-			if (r->body == NULL) {
+			cinja_dict d = cinja_temp_dict_create();
+			cinja_dict_set(d, temp_string_create("BODY"), r->body);
+			r->body = cinja_temp_render(main_temp, d);
+			if (!r->body) {
 				printf("Status: 500\r\nError during rendering");
 				continue;
 			}
-			free(b);
-			cinja_dict_free(d);
 		}
 
+		// Pass the headers and body to the proxy
 		void *state = NULL;
 		printf("Status: %d\r\n", r->status);
 		for (cinja_dict_entry_t e = cinja_dict_iter(r->headers, &state); e.value != NULL; e = cinja_dict_iter(r->headers, &state))
 			printf("%s: %s\r\n", e.key->buf, ((string)e.value)->buf);
 		printf("\r\n%s", r->body->buf);
 
-		free(r->body);
-		cinja_dict_free(r->headers);
-		free(r);
-		free(uri);
+		// Cleanup
 		fflush(stdout);
-
 		temp_alloc_reset();
 	}
+
 	temp_alloc_pop();
 	art_free(blog_root);
 	// Goddamnit Valgrind
