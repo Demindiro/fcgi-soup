@@ -180,9 +180,8 @@ static int set_article_dict(cinja_dict d, article art, int load_body) {
 	}
 
 	struct date t = art->date;
-	char _buf[64];
-	string buf = (string)_buf;
-	buf->len = snprintf(buf->buf, sizeof(_buf) - sizeof(buf->len), "%02d-%02d-%02d %02d:%02d",
+	string buf = temp_alloc(8 + 56);
+	buf->len = snprintf(buf->buf, 56, "%02d-%02d-%02d %02d:%02d",
 	                    t.year, t.month, t.day, t.hour, t.min);
 
 	cinja_dict_set(d, temp_string_create("URI"   ), art->uri);
@@ -200,9 +199,8 @@ Comments
 
 static cinja_dict _comment_to_dict(comment c)
 {
-	char _idbuf[64];
-	string idbuf = (string)_idbuf;
-	idbuf->len = snprintf(idbuf->buf, sizeof(_idbuf) - sizeof(idbuf->len), "%d", c->id);
+	string idbuf = temp_alloc(8 + 56);
+	idbuf->len = snprintf(idbuf->buf, 56, "%d", c->id);
 	cinja_dict d = cinja_temp_dict_create();
 	cinja_temp_dict_set(d, temp_string_create("AUTHOR"), c->author);
 	cinja_temp_dict_set(d, temp_string_create("DATE"  ), date_to_str(c->date));
@@ -480,16 +478,8 @@ static response handle_get(const string uri)
 				cinja_list_add(dicts, d);
 			}
 			cinja_dict dict = cinja_temp_dict_create();
-			cinja_dict_set(dict, temp_string_create("ARTICLES"), dicts);
+			cinja_temp_dict_set(dict, temp_string_create("ARTICLES"), dicts);
 			r->body = cinja_temp_render(entry_temp, dict);
-			char buf1[64], buf2[64];
-			string bodystr = (void *)buf1, datestr = (void *)buf2;
-			string_create("BODY", 4, bodystr);
-			string_create("DATE", 4, datestr);
-			for (size_t i = 0; i < dicts->count; i++) {
-				cinja_dict d = dicts->items[i].item;
-				free(cinja_dict_get(d, bodystr).value);
-			}
 		}
 		r->status = 200;
 		return r;
