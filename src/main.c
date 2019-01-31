@@ -182,7 +182,7 @@ static int set_article_dict(cinja_dict d, article art, int load_body) {
 	struct date t = art->date;
 	char _buf[64];
 	string buf = (string)_buf;
-	buf->len = snprintf(buf->buf, sizeof(_buf), "%02d-%02d-%02d %02d:%02d",
+	buf->len = snprintf(buf->buf, sizeof(_buf) - sizeof(buf->len), "%02d-%02d-%02d %02d:%02d",
 	                    t.year, t.month, t.day, t.hour, t.min);
 
 	cinja_dict_set(d, temp_string_create("URI"   ), art->uri);
@@ -202,7 +202,7 @@ static cinja_dict _comment_to_dict(comment c)
 {
 	char _idbuf[64];
 	string idbuf = (string)_idbuf;
-	idbuf->len = snprintf(idbuf->buf, sizeof(_idbuf), "%d", c->id);
+	idbuf->len = snprintf(idbuf->buf, sizeof(_idbuf) - sizeof(idbuf->len), "%d", c->id);
 	cinja_dict d = cinja_temp_dict_create();
 	cinja_temp_dict_set(d, temp_string_create("AUTHOR"), c->author);
 	cinja_temp_dict_set(d, temp_string_create("DATE"  ), date_to_str(c->date));
