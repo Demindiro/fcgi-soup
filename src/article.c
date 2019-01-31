@@ -82,7 +82,7 @@ cinja_list art_get_comments(art_root root, const string name)
 	const char **entries  = NULL;
 	comment     *comments = NULL;
 	cinja_list  ls        = NULL;
- 
+
 	string file_components[3] = { root->dir, comment_path_component, name };
 	string file = temp_string_concat(file_components, 3);
 	FILE *f = fopen(file->buf, "r");
@@ -149,36 +149,46 @@ success:
 
 int art_add_comment(art_root root, const string uri, comment c, size_t reply_to)
 {
+	// Search for the article
 	for (size_t i = 0; i < root->articles->count; i++) {
 		article a = cinja_list_get(root->articles, i).item;
 		if (string_eq(a->uri, uri))
 			goto found;
 	}
 	return -1;
+
 found:;
+	// Open the comment file
 	string file_components[3] = { root->dir, comment_path_component, uri };
-	string file = string_concat(file_components, 3);
+	string file = temp_string_concat(file_components, 3);
 	FILE *f = fopen(file->buf, "a");
 	if (f == NULL) {
 		f = fopen(file->buf, "w");
-		if (f == NULL) {
-			free(file);
+		if (f == NULL)
 			return -1;
-		}
 	}
-	free(file);
-#if __unix__ || __APPLE__
-	flockfile(f);
-#endif
 	struct date d = c->date;
 
+	// Write the author's name (without newlines)
+	for (size_t i = 0; i < c->author->len; i++) {
+		char x = c->author->buf[i];
+		switch (x) {
+		default  : fputc(x     , f); break;
+		case  '<': fputs("&lt;", f); break;
+		case  '>': fputs("&gt;", f); break;
+		case '\n': break;
+		}
+	}
+	fputc('\n', f);
+
+	// Write the date and reply ID
 	fprintf(f,
-	        "%s\n"
 	        "%u-%u-%u %u:%u\n"
 	        "%ld\n",
-		c->author->buf,
 	        d.year, d.month, d.day, d.hour, d.min,
-		reply_to);
+	        reply_to);
+
+	// Write the body with trimmed newlines
 	int nc = 0;
 	for (size_t i = 0; i < c->body->len; i++) {
 		char x = c->body->buf[i];
@@ -193,10 +203,13 @@ found:;
 			break;
 		}
 	}
+
+	// Write the delimiter
 	for (size_t i = nc; i <= 3; i++)
 		fputc('\n', f);
-	fclose(f);
 
+	// Done
+	fclose(f);
 	return 0;
 }
 
@@ -253,13 +266,11 @@ art_root art_load(const string path)
 		article a   = malloc(sizeof(*a));
 		char *ptr   = buf;
 		a->title    = copy_art_field(&ptr);
-		a->author   = copy_art_field(&ptr);
 		string date = copy_art_field(&ptr);
 		a->date     = parse_date(date);
 		free(date);
 		a->file     = copy_art_field(&ptr);
 		a->uri      = copy_art_field(&ptr);
-		
 		a->prev = prev;
 		if (prev != NULL)
 			prev->next = a;
@@ -280,7 +291,6 @@ void art_free(art_root root)
 	for (size_t i = 0; i < root->articles->count; i++) {
 		article a = cinja_list_get(root->articles, i).item;
 		free(a->title);
-		free(a->author);
 		free(a->file);
 		free(a->uri);
 		free(a);

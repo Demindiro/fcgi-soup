@@ -1,6 +1,7 @@
 #include "../include/mime.h"
 #include <stdlib.h>
 #include "dict.h"
+#include "temp-cstring.h"
 
 
 static cinja_dict d;
@@ -34,8 +35,7 @@ const string get_mime_type(const string filename)
 	}
 	if (lptr == NULL || *lptr == 0)
 		return NULL;
-	string s = string_create(lptr);
+	string s = temp_string_create(lptr);
 	string r = cinja_dict_get(d, s).value;
-	free(s);
 	return r;
 }
