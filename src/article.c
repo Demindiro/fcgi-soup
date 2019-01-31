@@ -82,7 +82,7 @@ cinja_list art_get_comments(art_root root, const string name)
 	const char **entries  = NULL;
 	comment     *comments = NULL;
 	cinja_list  ls        = NULL;
- 
+
 	string file_components[3] = { root->dir, comment_path_component, name };
 	string file = temp_string_concat(file_components, 3);
 	FILE *f = fopen(file->buf, "r");

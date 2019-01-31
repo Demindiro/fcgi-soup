@@ -94,7 +94,7 @@ static response get_error_response(response r, int status) {
 static string date_to_str(struct date d)
 {
 	static char buf[64];
-	snprintf(buf, sizeof(buf), "%d-%d-%d %d:%d", d.year, d.month, d.day, d.hour, d.min);
+	snprintf(buf, sizeof(buf), "%02d-%02d-%02d %02d:%02d", d.year, d.month, d.day, d.hour, d.min);
 	return temp_string_create(buf);
 }
 
@@ -181,7 +181,7 @@ static int set_article_dict(cinja_dict d, article art, int load_body) {
 
 	struct date t = art->date;
 	char buf[64];
-	snprintf(buf, sizeof(buf), "%d-%d-%d %d:%d",
+	snprintf(buf, sizeof(buf), "%02d-%02d-%02d %02d:%02d",
 	         t.year, t.month, t.day, t.hour, t.min);
 
 	cinja_dict_set(d, temp_string_create("URI"   ), art->uri);
@@ -395,12 +395,12 @@ static response handle_post(const string uri)
 	val = cinja_dict_get(d, temp_string_create("author")).value;
 	if (!val)
 		return get_error_response(r, 400);
-	c->author = temp_string_copy(val);
+	c->author = val;
 
 	val = cinja_dict_get(d, temp_string_create("body")).value;
 	if (!val)
 		return get_error_response(r, 400);
-	c->body   = temp_string_copy(val);
+	c->body   = val;
 
 	const char *rt_str = cinja_dict_get(d, temp_string_create("reply-to")).value;
 	size_t reply_to = rt_str != NULL ? atoi(rt_str) : -1;
@@ -445,12 +445,12 @@ static response handle_get(const string uri)
 			if (set_article_dict(d, a, 1) < 0)
 				return get_error_response(r, 500);
 			if (a->prev != NULL) {
-				cinja_dict_set(d, temp_string_create("PREV_URI"  ), temp_string_copy(a->prev->uri  ));
-				cinja_dict_set(d, temp_string_create("PREV_TITLE"), temp_string_copy(a->prev->title));
+				cinja_dict_set(d, temp_string_create("PREV_URI"  ), a->prev->uri  );
+				cinja_dict_set(d, temp_string_create("PREV_TITLE"), a->prev->title);
 			}
 			if (a->next != NULL) {
-				cinja_dict_set(d, temp_string_create("NEXT_URI"  ), temp_string_copy(a->next->uri  ));
-				cinja_dict_set(d, temp_string_create("NEXT_TITLE"), temp_string_copy(a->next->title));
+				cinja_dict_set(d, temp_string_create("NEXT_URI"  ), a->next->uri  );
+				cinja_dict_set(d, temp_string_create("NEXT_TITLE"), a->next->title);
 			}
 			cinja_list comments = get_comments(blog_root, nuri);
 			cinja_dict_set(d, temp_string_create("COMMENTS"), comments);
