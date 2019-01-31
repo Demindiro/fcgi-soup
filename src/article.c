@@ -167,9 +167,6 @@ found:;
 		if (f == NULL)
 			return -1;
 	}
-#if __unix__ || __APPLE__
-	flockfile(f);
-#endif
 	struct date d = c->date;
 
 	// Write the author's name (without newlines)
