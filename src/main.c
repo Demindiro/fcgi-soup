@@ -168,24 +168,25 @@ static int set_article_dict(cinja_dict d, article art, int load_body) {
 		if (fd < 0)
 			return -1;
 		fstat(fd, &statbuf);
-		char *buf = malloc(statbuf.st_size + 1);
+		string buf = temp_alloc(sizeof(buf->len) + statbuf.st_size + 1);
 		if (!buf) {
 			close(fd);
 			return -1;
 		}
-		read(fd, buf, statbuf.st_size);
-		buf[statbuf.st_size] = 0;
-		cinja_dict_set(d, temp_string_create("BODY"), temp_string_create(buf));
-		free(buf);
+		buf->len = statbuf.st_size;
+		read(fd, buf->buf, statbuf.st_size);
+		buf->buf[buf->len] = 0;
+		cinja_dict_set(d, temp_string_create("BODY"), buf);
 	}
 
 	struct date t = art->date;
-	char buf[64];
-	snprintf(buf, sizeof(buf), "%02d-%02d-%02d %02d:%02d",
-	         t.year, t.month, t.day, t.hour, t.min);
+	char _buf[64];
+	string buf = (string)_buf;
+	buf->len = snprintf(buf->buf, sizeof(_buf), "%02d-%02d-%02d %02d:%02d",
+	                    t.year, t.month, t.day, t.hour, t.min);
 
 	cinja_dict_set(d, temp_string_create("URI"   ), art->uri);
-	cinja_dict_set(d, temp_string_create("DATE"  ), temp_string_create(buf));
+	cinja_dict_set(d, temp_string_create("DATE"  ), buf);
 	cinja_dict_set(d, temp_string_create("TITLE" ), art->title);
 	cinja_dict_set(d, temp_string_create("AUTHOR"), author_name);
 
@@ -199,13 +200,14 @@ Comments
 
 static cinja_dict _comment_to_dict(comment c)
 {
-	char idbuf[64];
-	snprintf(idbuf, sizeof(idbuf), "%d", c->id);
+	char _idbuf[64];
+	string idbuf = (string)_idbuf;
+	idbuf->len = snprintf(idbuf->buf, sizeof(_idbuf), "%d", c->id);
 	cinja_dict d = cinja_temp_dict_create();
 	cinja_temp_dict_set(d, temp_string_create("AUTHOR"), c->author);
 	cinja_temp_dict_set(d, temp_string_create("DATE"  ), date_to_str(c->date));
 	cinja_temp_dict_set(d, temp_string_create("BODY"  ), c->body);
-	cinja_temp_dict_set(d, temp_string_create("ID"    ), temp_string_create(idbuf));
+	cinja_temp_dict_set(d, temp_string_create("ID"    ), idbuf);
 	if (c->replies->count > 0) {
 		cinja_list replies = cinja_temp_list_create();
 		for (size_t i = 0; i < c->replies->count; i++) {
@@ -412,12 +414,13 @@ static response handle_post(const string uri)
 	c->date.hour  = tm->tm_hour;
 	c->date.min   = tm->tm_min;
 
-	if (art_add_comment(blog_root, string_create(uri->buf + 5), c, reply_to) < 0)
+	string sub_uri = temp_string_create(uri->buf + 5, uri->len - 5);
+	if (art_add_comment(blog_root, sub_uri, c, reply_to) < 0)
 		return get_error_response(r, 500);
 
 	r->status = 302;
-	cinja_dict_set(r->headers, string_create("Location"), string_create(uri->buf + 5));
-	r->body = calloc(1,1);
+	cinja_dict_set(r->headers, temp_string_create("Location"), sub_uri);
+	r->body = temp_string_create("");
 	return r;
 }
 
