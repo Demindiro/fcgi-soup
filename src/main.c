@@ -375,6 +375,8 @@ Request handlers
 static response handle_post(const string uri)
 {
 	response r = response_create();
+
+	// Get the article
 	if (strncmp("blog/", uri->buf, 5) != 0) {
 		return get_error_response(r, 405);
 	}
@@ -386,10 +388,12 @@ static response handle_post(const string uri)
 		return get_error_response(r, 405);
 	}
 
+	// Read the request's body
 	char *body = temp_alloc(0xFFFF);
 	size_t end = fread(body, 1, 0xFFFF, stdin);
 	body[end] = 0;
 
+	// Parse the request's body
 	cinja_dict d = parse_query(body);
 	comment c = temp_alloc(sizeof(*c));
 	string val;
@@ -397,10 +401,16 @@ static response handle_post(const string uri)
 	val = cinja_dict_get(d, temp_string_create("author")).value;
 	if (!val)
 		return get_error_response(r, 400);
+	for (size_t i = 0; i < val->len; i++) {
+		if (val->buf[i] != '\n' && val->buf[i] != ' ' && val->buf[i] != '\t')
+			goto valid_author_name;
+	}
+	return get_error_response(r, 400);
+valid_author_name:
 	c->author = val;
 
 	val = cinja_dict_get(d, temp_string_create("body")).value;
-	if (!val)
+	if (!val || val->len == 0)
 		return get_error_response(r, 400);
 	c->body   = val;
 
