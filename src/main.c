@@ -412,8 +412,8 @@ valid_author_name:
 		return get_error_response(r, 400);
 	c->body   = val;
 
-	const char *rt_str = cinja_dict_get(d, temp_string_create("reply-to")).value;
-	size_t reply_to = rt_str != NULL ? atoi(rt_str) : -1;
+	string rt_str = cinja_dict_get(d, temp_string_create("reply-to")).value;
+	size_t reply_to = rt_str != NULL ? atoi(rt_str->buf) : -1;
 	time_t t = time(NULL);
 	struct tm *tm = localtime(&t);
 	c->date.year  = tm->tm_year + 11900;
