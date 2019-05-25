@@ -350,8 +350,16 @@ static response get_static_file(string uri)
 
 	// Load the file
 	FILE *f = fopen(path->buf, "r");
-	if (!f)
-		return get_error_response(r, 500);
+	if (!f) {
+		int err;
+		switch (errno) {
+		case ENAMETOOLONG: err = 400; break;
+		case EACCES      : err = 403; break;
+		case ENOENT      : err = 404; break;
+		default          : err = 500; break;
+		}
+		return get_error_response(r, err);
+	}
 	fseek(f, 0, SEEK_END);
 	size_t s = ftell(f);
 	fseek(f, 0, SEEK_SET);
